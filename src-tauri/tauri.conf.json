@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ClothingPOS",
+  "version": "1.0.1",
+  "identifier": "com.clothingpos.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Clothing Store POS",
+        "width": 1366,
+        "height": 768,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "sql": {
+      "preloadConnections": [
+        "sqlite:pos.db"
+      ]
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENCRTc0RTc5NzVBQTEwMUUKUldRZUVLcDFlVTdueTZUdEZ5Yk1PdXZ6L1FKTEhmaUNyTWM3WTJ2TmE2V2xPQStBaCtkZldVdzMK",
+      "endpoints": [
+        "https://raw.githubusercontent.com/aligujar7800-code/POS-system/main/update.json"
+      ]
+    }
+  }
+}
