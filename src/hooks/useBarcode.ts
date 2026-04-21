@@ -7,6 +7,19 @@ export function useBarcode(onScan: (barcode: string) => void) {
   const buffer = useRef('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const processBarcode = () => {
+    if (buffer.current.length >= MIN_BARCODE_LENGTH) {
+      const code = buffer.current;
+      buffer.current = '';
+      if (timer.current) clearTimeout(timer.current);
+      onScan(code);
+      // Dispatch custom event for other listeners
+      window.dispatchEvent(new CustomEvent('barcode-scanned', { detail: code }));
+    } else {
+      buffer.current = '';
+    }
+  };
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Only capture printable characters when not in an input/textarea
@@ -14,16 +27,7 @@ export function useBarcode(onScan: (barcode: string) => void) {
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
 
       if (e.key === 'Enter') {
-        if (buffer.current.length >= MIN_BARCODE_LENGTH) {
-          const code = buffer.current;
-          buffer.current = '';
-          if (timer.current) clearTimeout(timer.current);
-          onScan(code);
-          // Dispatch custom event for other listeners
-          window.dispatchEvent(new CustomEvent('barcode-scanned', { detail: code }));
-        } else {
-          buffer.current = '';
-        }
+        processBarcode();
         return;
       }
 
@@ -33,7 +37,7 @@ export function useBarcode(onScan: (barcode: string) => void) {
           buffer.current += e.key;
           if (timer.current) clearTimeout(timer.current);
           timer.current = setTimeout(() => {
-            buffer.current = '';
+            processBarcode();
           }, BUFFER_TIMEOUT_MS);
         }
       }

@@ -9,6 +9,39 @@ use tauri::{Manager, State};
 
 pub type DbState = Arc<Mutex<Connection>>;
 
+// ─── License ─────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn check_online_activation(db: State<'_, DbState>) -> Result<Option<license::LicenseInfo>, String> {
+    license::check_online_activation(db).await
+}
+
+#[tauri::command]
+pub fn get_license_status(db: State<'_, DbState>) -> Result<Option<license::LicenseInfo>, String> {
+    let conn = db.lock();
+    license::get_license_status(&conn).map_err(|e: rusqlite::Error| e.to_string())
+}
+
+#[tauri::command]
+pub fn activate_license(db: State<DbState>, key: String) -> Result<license::LicenseInfo, String> {
+    let conn = db.lock();
+    license::activate_license(&conn, &key)
+}
+
+#[tauri::command]
+pub fn get_machine_id() -> Result<String, String> {
+    license::get_machine_fingerprint()
+}
+
+#[tauri::command]
+pub fn request_license(
+    customer_name: String,
+    customer_phone: String,
+    machine_id: String,
+) -> Result<(), String> {
+    license::send_license_request(&customer_name, &customer_phone, &machine_id)
+}
+
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -566,6 +599,15 @@ pub fn print_label(
 }
 
 #[tauri::command]
+pub fn print_label_batch(
+    items: Vec<label::LabelBatchItem>,
+    shop_name: String,
+    config: printer::PrinterConfig,
+) -> Result<(), String> {
+    label::print_label_batch(&items, &shop_name, &config)
+}
+
+#[tauri::command]
 pub fn print_sale_by_id(
     db: State<DbState>,
     id: i64,
@@ -579,6 +621,8 @@ pub fn print_sale_by_id(
     let shop_name = settings.get("shop_name").cloned().unwrap_or_else(|| "My Shop".to_string());
     let shop_address = settings.get("shop_address").cloned().unwrap_or_default();
     let shop_phone = settings.get("shop_phone").cloned().unwrap_or_default();
+    let shop_email = settings.get("shop_email").cloned().unwrap_or_default();
+    let receipt_header = settings.get("receipt_header").cloned().unwrap_or_default();
     let receipt_footer = settings.get("receipt_footer").cloned().unwrap_or_else(|| "Thank You!".to_string());
 
     let receipt_items = items.into_iter().map(|i| printer::ReceiptItem {
@@ -592,6 +636,8 @@ pub fn print_sale_by_id(
         shop_name,
         shop_address,
         shop_phone,
+        shop_email,
+        header: receipt_header,
         invoice_number: sale.invoice_number,
         sale_date: sale.sale_date,
         customer_name: sale.customer_name,

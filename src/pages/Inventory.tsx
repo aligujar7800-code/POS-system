@@ -293,6 +293,55 @@ export default function InventoryPage() {
                           <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                             <Layers className="w-3 h-3" /> Individual Variants
                           </h4>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (variants.length === 0) return;
+                              const validVariants = variants.filter(v => v.variant_barcode && v.quantity > 0);
+                              if (validVariants.length === 0) {
+                                toast('No variants with barcodes and stock found to print.', 'error');
+                                return;
+                              }
+                              try {
+                                const port = useSettingsStore.getState().label_printer_port || useSettingsStore.getState().printer_port;
+                                const printer_type = (() => {
+                                  if (port.toUpperCase().startsWith('COM')) return 'serial';
+                                  if (port.startsWith('usb:')) return 'usb';
+                                  if (port.includes('.') && port.includes(':')) return 'network';
+                                  return 'system';
+                                })();
+                                const batchItems = validVariants.flatMap(v => 
+                                  Array.from({ length: v.quantity }).map(() => ({
+                                    shop_name: useSettingsStore.getState().shop_name,
+                                    product_name: p.name,
+                                    size: v.size,
+                                    color: v.color,
+                                    price: v.variant_price || p.sale_price,
+                                    barcode: v.variant_barcode || '',
+                                    quantity: 1, // handled by flatMap
+                                    offset_x: useSettingsStore.getState().label_offset_x,
+                                    offset_y: useSettingsStore.getState().label_offset_y
+                                  }))
+                                );
+                                await cmd('print_label_batch', {
+                                  items: batchItems,
+                                  shopName: useSettingsStore.getState().shop_name,
+                                  config: {
+                                    printer_type,
+                                    port,
+                                    baud_rate: useSettingsStore.getState().printer_baud
+                                  }
+                                });
+                                toast('Batch sent to printer!', 'success');
+                              } catch (err: any) {
+                                toast(err.toString(), 'error');
+                              }
+                            }}
+                            className="btn-secondary btn-sm"
+                            disabled={isLoadingVariants || variants.length === 0}
+                          >
+                            <Printer className="w-4 h-4 mr-1" /> Print All Variants
+                          </button>
                         </div>
                         
                         {isLoadingVariants ? (

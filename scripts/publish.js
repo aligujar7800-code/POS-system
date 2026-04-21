@@ -8,7 +8,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- Configuration ---
-const GITHUB_TOKEN = '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';
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+if (!GITHUB_TOKEN) {
+  console.error('Error: GITHUB_TOKEN environment variable is missing.');
+  process.exit(1);
+}
 const REPO_OWNER = 'aligujar7800-code';
 const REPO_NAME = 'POS-system';
 const TARGET = 'x86_64-pc-windows-msvc'; // Default tauri windows target
@@ -92,16 +96,23 @@ const signature = fs.readFileSync(sigPath, 'utf8');
 function ghApi(method, endpoint, body = null, isUpload = false) {
   return new Promise((resolve, reject) => {
     let host = isUpload ? 'uploads.github.com' : 'api.github.com';
+    const bodyData = body ? (Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body))) : null;
+    const headers = {
+      'Authorization': `token ${GITHUB_TOKEN}`,
+      'User-Agent': 'Tauri-AutoUpdater',
+      'Accept': 'application/vnd.github.v3+json',
+    };
+    if (isUpload) {
+      headers['Content-Type'] = 'application/octet-stream';
+    }
+    if (bodyData) {
+      headers['Content-Length'] = bodyData.length;
+    }
     const req = https.request({
       hostname: host,
       path: endpoint,
       method,
-      headers: {
-        'Authorization': `token ${GITHUB_TOKEN}`,
-        'User-Agent': 'Tauri-AutoUpdater',
-        'Accept': 'application/vnd.github.v3+json',
-        ...(isUpload ? { 'Content-Type': 'application/octet-stream' } : {}),
-      }
+      headers,
     }, (res) => {
       let data = [];
       res.on('data', chunk => data.push(chunk));
@@ -116,12 +127,8 @@ function ghApi(method, endpoint, body = null, isUpload = false) {
     });
 
     req.on('error', reject);
-    if (body) {
-      if (Buffer.isBuffer(body)) {
-        req.write(body);
-      } else {
-        req.write(JSON.stringify(body));
-      }
+    if (bodyData) {
+      req.write(bodyData);
     }
     req.end();
   });
@@ -154,7 +161,7 @@ async function publish() {
 
     console.log(`[6] Generating update.json...`);
     const updateJson = {
-      version: tag,
+      version: semver,
       notes: `Release notes for version ${tag}`,
       pub_date: new Date().toISOString(),
       platforms: {

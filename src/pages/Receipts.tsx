@@ -7,6 +7,7 @@ import { useToast } from '../components/ui/Toaster';
 import { format } from 'date-fns';
 import { Search, Printer, Eye, X, Receipt as ReceiptIcon, ArrowRightLeft, AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import Barcode from 'react-barcode';
 
 interface Sale {
   id: number;
@@ -38,9 +39,10 @@ interface SaleItem {
 export default function ReceiptsPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const { 
+  const {
     printer_type, printer_port, printer_baud, currency_symbol,
-    shop_name, shop_address, shop_phone, receipt_footer
+    shop_name, shop_address, shop_phone, shop_logo, shop_email,
+    receipt_header, receipt_footer
   } = useSettingsStore();
 
   const [query, setQuery] = useState('');
@@ -53,14 +55,14 @@ export default function ReceiptsPage() {
 
   const { data: sales = [], isFetching } = useQuery<Sale[]>({
     queryKey: ['sales-history', query, fromDate, toDate],
-    queryFn: () => cmd('search_sales', { 
-        query: query || null, 
-        from: fromDate || null, 
-        to: toDate || null 
+    queryFn: () => cmd('search_sales', {
+      query: query || null,
+      from: fromDate || null,
+      to: toDate || null
     }),
   });
 
-  const filteredSales = statusFilter 
+  const filteredSales = statusFilter
     ? sales.filter(s => s.status === statusFilter)
     : sales;
 
@@ -107,8 +109,8 @@ export default function ReceiptsPage() {
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-slate-600">From:</label>
-          <input 
-            type="date" 
+          <input
+            type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
             className="input"
@@ -116,8 +118,8 @@ export default function ReceiptsPage() {
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-slate-600">To:</label>
-          <input 
-            type="date" 
+          <input
+            type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
             className="input"
@@ -160,10 +162,10 @@ export default function ReceiptsPage() {
                 </tr>
               ) : filteredSales.length === 0 ? (
                 <tr>
-                   <td colSpan={7} className="py-12 text-center text-slate-500">
-                     <ReceiptIcon className="w-12 h-12 mx-auto text-slate-300 mb-2" />
-                     No sales found matching your criteria.
-                   </td>
+                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                    <ReceiptIcon className="w-12 h-12 mx-auto text-slate-300 mb-2" />
+                    No sales found matching your criteria.
+                  </td>
                 </tr>
               ) : (
                 filteredSales.map((s) => (
@@ -180,9 +182,9 @@ export default function ReceiptsPage() {
                     <td className="py-3 px-4">
                       <span className={cn("px-2 py-1 rounded text-xs font-medium uppercase",
                         s.payment_method === 'cash' ? "bg-emerald-100 text-emerald-700" :
-                        s.payment_method === 'card' ? "bg-blue-100 text-blue-700" :
-                        s.payment_method === 'udhaar' ? "bg-rose-100 text-rose-700" :
-                        "bg-amber-100 text-amber-700"
+                          s.payment_method === 'card' ? "bg-blue-100 text-blue-700" :
+                            s.payment_method === 'udhaar' ? "bg-rose-100 text-rose-700" :
+                              "bg-amber-100 text-amber-700"
                       )}>
                         {s.payment_method}
                       </span>
@@ -190,8 +192,8 @@ export default function ReceiptsPage() {
                     <td className="py-3 px-4">
                       <span className={cn("px-2 py-1 rounded text-xs font-medium uppercase",
                         s.status === 'paid' ? "bg-emerald-100 text-emerald-700" :
-                        s.status === 'partial' ? "bg-amber-100 text-amber-700" :
-                        "bg-rose-100 text-rose-700"
+                          s.status === 'partial' ? "bg-amber-100 text-amber-700" :
+                            "bg-rose-100 text-rose-700"
                       )}>
                         {s.status}
                       </span>
@@ -201,7 +203,7 @@ export default function ReceiptsPage() {
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex justify-end gap-2">
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -212,21 +214,21 @@ export default function ReceiptsPage() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button 
-                           onClick={(e) => {
-                             e.preventDefault();
-                             e.stopPropagation();
-                             if (!printer_type || printer_type === 'none') {
-                               setSelectedSale(s.id);
-                             } else {
-                               handleReprint(s.id);
-                             }
-                           }}
-                           className="btn-icon text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
-                           title="Reprint Receipt"
-                         >
-                           <Printer className="w-4 h-4" />
-                         </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!printer_type || printer_type === 'none') {
+                              setSelectedSale(s.id);
+                            } else {
+                              handleReprint(s.id);
+                            }
+                          }}
+                          className="btn-icon text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
+                          title="Reprint Receipt"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -238,26 +240,29 @@ export default function ReceiptsPage() {
       </div>
 
       {selectedSale && (
-         <SaleDetailsModal 
-           saleId={selectedSale} 
-           onClose={() => setSelectedSale(null)}
-           onReprint={() => handleReprint(selectedSale)}
-           onReturn={() => {
-             const id = selectedSale;
-             setSelectedSale(null);
-             setReturningSale(id);
-           }}
-           currency_symbol={currency_symbol}
-           printer_type={printer_type}
-           shop_name={shop_name}
-           shop_address={shop_address}
-           shop_phone={shop_phone}
-           receipt_footer={receipt_footer}
-         />
+        <SaleDetailsModal
+          saleId={selectedSale}
+          onClose={() => setSelectedSale(null)}
+          onReprint={() => handleReprint(selectedSale)}
+          onReturn={() => {
+            const id = selectedSale;
+            setSelectedSale(null);
+            setReturningSale(id);
+          }}
+          currency_symbol={currency_symbol}
+          printer_type={printer_type}
+          shop_name={shop_name}
+          shop_address={shop_address}
+          shop_phone={shop_phone}
+          shop_logo={shop_logo}
+          shop_email={shop_email}
+          receipt_header={receipt_header}
+          receipt_footer={receipt_footer}
+        />
       )}
 
       {returningSale && (
-        <ReturnItemsModal 
+        <ReturnItemsModal
           saleId={returningSale}
           onClose={() => setReturningSale(null)}
           currencySymbol={currency_symbol}
@@ -267,11 +272,11 @@ export default function ReceiptsPage() {
   );
 }
 
-function SaleDetailsModal({ 
+export function SaleDetailsModal({
   saleId, onClose, onReprint, onReturn, currency_symbol, printer_type,
-  shop_name, shop_address, shop_phone, receipt_footer
-}: { 
-  saleId: number; 
+  shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer
+}: {
+  saleId: number;
   onClose: () => void;
   onReprint: () => void;
   onReturn: () => void;
@@ -280,6 +285,9 @@ function SaleDetailsModal({
   shop_name?: string;
   shop_address?: string;
   shop_phone?: string;
+  shop_logo?: string | null;
+  shop_email?: string;
+  receipt_header?: string;
   receipt_footer?: string;
 }) {
   const { data, isLoading, error } = useQuery<[Sale, SaleItem[]]>({
@@ -292,7 +300,7 @@ function SaleDetailsModal({
       <>
         <div className="overlay" onClick={onClose} />
         <div className="dialog w-[500px] flex items-center justify-center py-12">
-           <span className="w-8 h-8 rounded-full border-4 border-brand-200 border-t-brand-600 animate-spin" />
+          <span className="w-8 h-8 rounded-full border-4 border-brand-200 border-t-brand-600 animate-spin" />
         </div>
       </>
     );
@@ -303,11 +311,11 @@ function SaleDetailsModal({
       <>
         <div className="overlay" onClick={onClose} />
         <div className="dialog w-[500px] text-center py-8">
-           <p className="text-red-500 mb-4">Error loading details</p>
-           <pre className="text-xs text-left p-4 bg-slate-100 mb-4 overflow-auto border border-red-200">
-             {String(error)}
-           </pre>
-           <button onClick={onClose} className="btn-secondary">Close</button>
+          <p className="text-red-500 mb-4">Error loading details</p>
+          <pre className="text-xs text-left p-4 bg-slate-100 mb-4 overflow-auto border border-red-200">
+            {String(error)}
+          </pre>
+          <button onClick={onClose} className="btn-secondary">Close</button>
         </div>
       </>
     );
@@ -320,85 +328,155 @@ function SaleDetailsModal({
       <div className="overlay no-print" onClick={onClose} />
       <div className="dialog w-[400px] print-receipt font-mono text-sm">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 no-print">
-           <div>
-             <h2 className="text-lg font-bold text-slate-800">Receipt Details</h2>
-             <p className="text-xs text-slate-500">Preview before printing</p>
-           </div>
-           <button onClick={onClose} className="text-slate-400 hover:text-red-500 no-print"><X className="w-5 h-5"/></button>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Receipt Details</h2>
+            <p className="text-xs text-slate-500">Preview before printing</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-red-500 no-print"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Thermal Header */}
-        <div className="text-center mb-4 pb-4 border-b border-dashed border-slate-300">
-           <h2 className="text-xl font-bold uppercase">{shop_name || 'My Shop'}</h2>
-           <p className="text-xs text-slate-600 mt-1">{shop_address}</p>
-           <p className="text-xs text-slate-600">{shop_phone}</p>
-        </div>
-        
-        <div className="mb-4 text-xs space-y-1">
-          <div className="flex justify-between"><span>Inv:</span> <span className="font-medium">{sale.invoice_number}</span></div>
-          <div className="flex justify-between"><span>Date:</span> <span>{format(new Date(sale.sale_date), 'dd MMM yyyy, hh:mm a')}</span></div>
-          <div className="flex justify-between"><span>Cust:</span> <span>{sale.customer_name || 'Walk-in'}</span></div>
-        </div>
+        {/* ── Thermal-style Receipt Body ── */}
+        <div style={{ fontFamily: "'Courier New', Courier, monospace", fontSize: '12px', lineHeight: '1.6', color: '#000', letterSpacing: '0.02em' }}>
 
-        <div className="max-h-64 overflow-y-auto mb-4 border-t border-b border-dashed border-slate-300 py-2">
-          <table className="w-full text-xs">
-             <thead>
-               <tr className="text-slate-500 border-b border-slate-200">
-                 <th className="text-left font-normal pb-1 uppercase">Item</th>
-                 <th className="text-center font-normal pb-1 uppercase">Qty</th>
-                 <th className="text-right font-normal pb-1 uppercase">Total</th>
-               </tr>
-             </thead>
-             <tbody>
-               {items.map(i => (
-                 <tr key={i.id} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 text-slate-800">
-                      <div>{i.product_name}</div>
-                      <div className="text-[10px] text-slate-500">@{formatCurrency(i.unit_price, currency_symbol)}</div>
-                    </td>
-                    <td className="py-2 text-center text-slate-800">{i.quantity}</td>
-                    <td className="py-2 text-right font-bold text-slate-900">{formatCurrency(i.total_price, currency_symbol)}</td>
-                 </tr>
-               ))}
-             </tbody>
-          </table>
-        </div>
+          {/* Shop Header - Centered */}
+          <div style={{ textAlign: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px dashed #333' }}>
+            {shop_logo && (
+              <img src={shop_logo} alt="Logo" style={{ width: '56px', height: '56px', margin: '0 auto 6px', display: 'block', objectFit: 'contain' }} />
+            )}
+            <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{shop_name || 'My Shop'}</div>
+            {shop_address && <div style={{ fontSize: '11px', marginTop: '2px' }}>{shop_address}</div>}
+            {shop_phone && <div style={{ fontSize: '11px' }}>{shop_phone}</div>}
+            {shop_email && <div style={{ fontSize: '11px' }}>{shop_email}</div>}
+          </div>
 
-        <div className="mt-2 space-y-1 text-xs">
-          <div className="flex justify-between text-slate-600"><span>Subtotal:</span> <span>{formatCurrency(sale.subtotal, currency_symbol)}</span></div>
-          {sale.discount_amount > 0 && <div className="flex justify-between text-slate-700"><span>Discount:</span> <span>-{formatCurrency(sale.discount_amount, currency_symbol)}</span></div>}
-          {sale.tax_amount > 0 && <div className="flex justify-between text-slate-600"><span>Tax:</span> <span>{formatCurrency(sale.tax_amount, currency_symbol)}</span></div>}
-          <div className="flex justify-between font-bold text-sm text-slate-900 border-t border-dashed border-slate-300 pt-1 mt-1"><span>Total:</span> <span>{formatCurrency(sale.total_amount, currency_symbol)}</span></div>
-          <div className="flex justify-between text-slate-500 pt-1 mt-1"><span>Payment ({sale.payment_method}):</span> <span>{formatCurrency(sale.paid_amount, currency_symbol)}</span></div>
-          {(sale.change_amount > 0 || (sale.total_amount - sale.paid_amount) > 0) && (
-             <div className="flex justify-between text-slate-500">
-               <span>{sale.change_amount > 0 ? 'Change given' : 'Balance (Udhaar)'}:</span> 
-               <span>{formatCurrency(sale.change_amount > 0 ? sale.change_amount : (sale.total_amount - sale.paid_amount), currency_symbol)}</span>
-             </div>
+          {/* Receipt Header Text (from settings) */}
+          {receipt_header && (
+            <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px', padding: '4px 0', borderBottom: '1px dashed #999' }}>
+              {receipt_header.split('\n').map((line, idx) => (
+                <div key={idx}>{line}</div>
+              ))}
+            </div>
           )}
-        </div>
 
-        <div className="text-center mt-6 pt-4 border-t border-slate-100 text-[10px] text-slate-400">
-           {receipt_footer || 'Thank You!'}
+          {/* Sale Info - Left/Right */}
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sale ID:</span><span style={{ fontWeight: 600 }}>{sale.invoice_number}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Date:</span><span>{format(new Date(sale.sale_date), 'dd MMM yyyy, hh:mm a')}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer:</span><span>{sale.customer_name || 'Walk-in'}</span></div>
+          </div>
+
+          {/* Items Header */}
+          <div style={{ borderTop: '1px dashed #333', borderBottom: '1px dashed #333', padding: '4px 0', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', fontWeight: 'bold' }}>
+              <span style={{ flex: '1 1 40%' }}>Item</span>
+              <span style={{ width: '35px', textAlign: 'center' }}>Qty</span>
+              <span style={{ width: '70px', textAlign: 'right' }}>Rate</span>
+              <span style={{ width: '75px', textAlign: 'right' }}>Total</span>
+            </div>
+          </div>
+
+          {/* Items */}
+          <div style={{ marginBottom: '8px' }}>
+            {items.map(i => (
+              <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
+                <div style={{ display: 'flex' }}>
+                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{i.product_name}</span>
+                  <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
+                  <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currency_symbol)}</span>
+                  <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(i.total_price, currency_symbol)}</span>
+                </div>
+                {i.quantity > 1 && (
+                  <div style={{ fontSize: '10px', color: '#666', paddingLeft: '4px' }}>
+                    @ {formatCurrency(i.unit_price, currency_symbol)} x {i.quantity}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Separator */}
+          <div style={{ borderTop: '1px dashed #333', paddingTop: '6px', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>SUBTOTAL:</span><span>{formatCurrency(sale.subtotal, currency_symbol)}</span></div>
+            {sale.discount_amount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>DISCOUNT:</span><span>-{formatCurrency(sale.discount_amount, currency_symbol)}</span></div>
+            )}
+            {sale.tax_amount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TAX:</span><span>{formatCurrency(sale.tax_amount, currency_symbol)}</span></div>
+            )}
+          </div>
+
+          {/* Total - Bold */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '4px 0', margin: '4px 0' }}>
+            <span>TOTAL:</span><span>{formatCurrency(sale.total_amount, currency_symbol)}</span>
+          </div>
+
+          {/* Payment */}
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>PAID ({sale.payment_method.toUpperCase()}):</span><span>{formatCurrency(sale.paid_amount, currency_symbol)}</span></div>
+            {sale.change_amount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CHANGE:</span><span>{formatCurrency(sale.change_amount, currency_symbol)}</span></div>
+            )}
+            {(sale.total_amount - sale.paid_amount) > 0.01 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c00', fontWeight: 'bold' }}><span>BALANCE DUE:</span><span>{formatCurrency(sale.total_amount - sale.paid_amount, currency_symbol)}</span></div>
+            )}
+          </div>
+
+          {/* Double-line separator */}
+          <div style={{ borderTop: '3px double #333', marginBottom: '8px' }}></div>
+
+          {/* Shop info repeated (like Python module) */}
+          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px' }}>
+            {shop_address && <div>{shop_address}</div>}
+            {shop_phone && <div>Tel: {shop_phone}</div>}
+            {shop_email && <div>{shop_email}</div>}
+          </div>
+
+          {/* Footer */}
+          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '10px' }}>
+            {(receipt_footer || 'Thank You!').split('\n').map((line, idx) => (
+              <div key={idx}>{line}</div>
+            ))}
+          </div>
+
+          {/* Barcode */}
+          <div style={{ textAlign: 'center', margin: '8px 0' }}>
+            <Barcode
+              value={sale.invoice_number}
+              width={1.2}
+              height={40}
+              displayValue={true}
+              fontSize={11}
+              margin={0}
+              font="'Courier New', monospace"
+            />
+          </div>
         </div>
 
         <div className="mt-6 flex flex-col gap-3 no-print">
-          <button 
-             onClick={() => {
-               if (!printer_type || printer_type === 'none') {
-                 window.print();
-               } else {
-                 onReprint();
-                 onClose();
-               }
-             }} 
-             className="btn-primary py-2 rounded-lg flex items-center justify-center gap-2"
+          {/* Direct Thermal Printer (ESC/POS – sharp professional output) */}
+          {printer_type && printer_type !== 'none' && (
+            <button
+              onClick={() => {
+                onReprint();
+                onClose();
+              }}
+              className="btn-primary py-2 rounded-lg flex items-center justify-center gap-2"
+            >
+              <Printer className="w-4 h-4" />
+              Print Receipt (Thermal Printer)
+            </button>
+          )}
+
+          {/* Browser Print Preview (A4 / PDF fallback) */}
+          <button
+            onClick={() => window.print()}
+            className={`${printer_type && printer_type !== 'none' ? 'btn-secondary' : 'btn-primary'} py-2 rounded-lg flex items-center justify-center gap-2`}
           >
-            <Printer className="w-4 h-4" /> 
-            {(!printer_type || printer_type === 'none') ? "Print Document (Preview)" : "Reprint Receipt"}
+            <Eye className="w-4 h-4" />
+            Print Preview (Browser)
           </button>
-          
-          <button 
+
+          <button
             onClick={onReturn}
             className="btn-secondary py-2 rounded-lg flex items-center justify-center gap-2 text-rose-600 border-rose-200 hover:bg-rose-50"
           >
@@ -485,7 +563,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
       <div className="dialog w-[600px] flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-slate-800">Return Items: {sale.invoice_number}</h2>
-          <button onClick={onClose} className="btn-icon"><X className="w-5 h-5"/></button>
+          <button onClick={onClose} className="btn-icon"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-4 bg-amber-50 rounded-lg border border-amber-100 mb-4 flex items-start gap-3">
@@ -515,7 +593,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
                   </td>
                   <td className="p-3 text-center text-slate-600">{item.quantity}</td>
                   <td className="p-3">
-                    <input 
+                    <input
                       type="number"
                       className="input py-1 text-center w-full"
                       value={returnQtys[item.id] || ''}
@@ -524,7 +602,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
                     />
                   </td>
                   <td className="p-3 text-center">
-                    <input 
+                    <input
                       type="checkbox"
                       className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
                       checked={!!damagedMap[item.id]}
@@ -543,7 +621,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Refund Method</label>
-            <select 
+            <select
               className="input w-full"
               value={refundMethod}
               onChange={(e) => setRefundMethod(e.target.value as any)}
@@ -560,7 +638,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
 
         <div>
           <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Return Reason (Optional)</label>
-          <input 
+          <input
             type="text"
             className="input w-full mb-6"
             placeholder="e.g., Size issue, Wrong color..."
@@ -571,8 +649,8 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
 
         <div className="flex gap-3">
           <button onClick={onClose} className="btn-secondary flex-1" disabled={isSubmitting}>Cancel</button>
-          <button 
-            onClick={handleSubmit} 
+          <button
+            onClick={handleSubmit}
             className="btn-primary flex-1 bg-rose-600 hover:bg-rose-700 border-rose-600"
             disabled={isSubmitting || totalRefund <= 0}
           >

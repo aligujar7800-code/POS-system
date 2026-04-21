@@ -672,9 +672,32 @@ pub fn add_inward_stock(conn: &mut Connection, payload: &InwardStockPayload) -> 
                 actual_variant_id = vid;
             } else {
                 // Not found! We must create this new combination.
+                // Generate a barcode for the new variant
+                let variant_count: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM product_variants WHERE product_id = ?1",
+                    params![item.product_id],
+                    |r| r.get(0)
+                ).unwrap_or(0);
+
+                let article_number: Option<String> = tx.query_row(
+                    "SELECT article_number FROM products WHERE id = ?1",
+                    params![item.product_id],
+                    |r| r.get(0)
+                ).unwrap_or(None);
+
+                let v_barcode = if let Some(art) = article_number {
+                    if !art.is_empty() {
+                        Some(format!("{}-{:02}", art, variant_count + 1))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
                 tx.execute(
-                    "INSERT INTO product_variants (product_id, size, color, quantity) VALUES (?1, ?2, ?3, 0)",
-                    params![item.product_id, item.size, item.color],
+                    "INSERT INTO product_variants (product_id, size, color, quantity, variant_barcode) VALUES (?1, ?2, ?3, 0, ?4)",
+                    params![item.product_id, item.size, item.color, v_barcode],
                 )?;
                 actual_variant_id = tx.last_insert_rowid();
             }

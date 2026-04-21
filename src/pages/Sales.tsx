@@ -6,6 +6,7 @@ import { cmd, formatCurrency } from '../lib/utils';
 import { useCartStore } from '../stores/cartStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
+import { SaleDetailsModal } from './Receipts';
 import { useBarcode, useGlobalBarcode } from '../hooks/useBarcode';
 import { useToast } from '../components/ui/Toaster';
 import {
@@ -169,7 +170,11 @@ export default function SalesPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { user } = useAuthStore();
-  const { currency_symbol, tax_rate, printer_type, printer_port, printer_baud } = useSettingsStore();
+  const { 
+    currency_symbol, tax_rate, printer_type, printer_port, printer_baud,
+    shop_name, shop_address, shop_phone, shop_logo, shop_email,
+    receipt_header, receipt_footer
+  } = useSettingsStore();
   const cart = useCartStore();
   const queryClient = useQueryClient();
 
@@ -219,19 +224,36 @@ export default function SalesPage() {
       if (product) {
         // Resolve variant for barcode scanned item
         const variants = await cmd<ProductVariant[]>('get_product_variants', { productId: product.id });
-        const variant = variants[0]; // Use first variant as default
+        
+        // 1. Try to find the exact variant that matches this barcode
+        let variant = variants.find(v => v.variant_barcode === barcode);
+        
+        // 2. If no exact match (e.g. main product barcode was scanned), check if we need to show variant picker
+        if (!variant && variants.length > 0) {
+          if (variants.length > 1) {
+            // Product has multiple variants, let user pick
+            setShowVariants(product);
+            return;
+          }
+          // Only one variant exists, use it
+          variant = variants[0];
+        }
+
+        const nameStr = variant && (variant.size || variant.color) 
+          ? `${product.name} (${[variant.size, variant.color].filter(Boolean).join(' / ')})`
+          : product.name;
 
         cart.addItem({
           product_id: product.id,
-          variant_id: variant?.id ?? null,
-          product_name: product.name,
-          barcode: product.barcode,
+          variant_id: variant?.id ?? undefined,
+          product_name: nameStr,
+          barcode: variant?.variant_barcode || product.barcode,
           quantity: 1,
           unit_price: variant?.variant_price ?? product.sale_price,
           discount: 0,
           discount_type: 'amount',
         });
-        toast(`Added: ${product.name}`, 'success');
+        toast(`Added: ${nameStr}`, 'success');
       } else {
         toast(`Barcode not found: ${barcode}`, 'error');
       }
@@ -729,6 +751,38 @@ export default function SalesPage() {
             setShowVariants(null);
           }}
           onClose={() => setShowVariants(null)}
+        />
+      )}
+      {lastSaleId && (
+        <SaleDetailsModal
+          saleId={lastSaleId}
+          onClose={() => setLastSaleId(null)}
+          onReprint={async () => {
+            if (printer_type && printer_type !== 'none') {
+              try {
+                await cmd('print_sale_by_id', { 
+                  id: lastSaleId,
+                  config: { printer_type, port: printer_port, baud_rate: printer_baud }
+                });
+                toast("Receipt sent to printer", "success");
+              } catch (e: any) {
+                toast("Print failed: " + e.toString(), "error");
+              }
+            }
+          }}
+          onReturn={() => {
+            toast("Please go to Receipts tab to process returns", "info");
+            setLastSaleId(null);
+          }}
+          currency_symbol={currency_symbol}
+          printer_type={printer_type}
+          shop_name={shop_name}
+          shop_address={shop_address}
+          shop_phone={shop_phone}
+          shop_logo={shop_logo}
+          shop_email={shop_email}
+          receipt_header={receipt_header}
+          receipt_footer={receipt_footer}
         />
       )}
     </div>

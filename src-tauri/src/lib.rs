@@ -24,6 +24,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // License
+            check_online_activation,
+            get_license_status,
+            activate_license,
+            get_machine_id,
+            request_license,
             // Auth
             authenticate_user,
             get_all_users,
@@ -101,6 +107,7 @@ pub fn run() {
             test_print,
             print_receipt,
             print_label,
+            print_label_batch,
             print_sale_by_id,
             open_cash_drawer,
             // Backup

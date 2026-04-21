@@ -3,11 +3,16 @@ import { invoke } from '@tauri-apps/api/core';
 // Type-safe wrapper around Tauri invoke
 export async function cmd<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
-    // Check if we are in Tauri
-    if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+    // Check if we are running in Tauri
+    const isTauri = typeof window !== 'undefined' && 
+      (window.hasOwnProperty('__TAURI_INTERNALS__') || 
+       window.hasOwnProperty('__TAURI__') || 
+       window.hasOwnProperty('__TAURI_IPC__'));
+
+    if (isTauri) {
       return await invoke<T>(command, args);
     }
-    
+
     // Fallback for browser testing
     console.warn(`Browser Mock: ${command}`, args);
     

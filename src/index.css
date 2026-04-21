@@ -160,19 +160,44 @@
     }
 
     /* Force visibility of print-only content like receipts */
-    .print-receipt {
-      display: block !important;
+    body:has(.print-receipt) * {
+      visibility: hidden !important;
+    }
+    body:has(.print-receipt) .print-receipt,
+    body:has(.print-receipt) .print-receipt * {
       visibility: visible !important;
-      position: relative !important;
-      max-width: 100% !important;
+      color: #000 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      -webkit-font-smoothing: antialiased !important;
+      text-rendering: geometricPrecision !important;
+      border-color: #000 !important;
+      -webkit-text-stroke: 0.4px #000 !important; /* Thickens normal text just enough to print solid black without being fully Bold */
+    }
+    .print-receipt {
+      position: fixed !important;
+      left: 0 !important;
+      top: 0 !important;
+      transform: none !important;
       margin: 0 !important;
+      padding: 4mm !important;
+      box-shadow: none !important;
+      border: none !important;
+      width: 75mm !important;
+      max-width: 75mm !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      background: white !important;
+      font-size: 13px !important;
+      line-height: 1.5 !important;
     }
 
     /* Ensure table rows don't break across pages weirdly */
     tr { break-inside: avoid; break-after: auto; }
     
     @page {
-      margin: 1cm;
+      margin: 0; /* Remove default browser margins for POS receipts */
       size: auto;
     }
   }

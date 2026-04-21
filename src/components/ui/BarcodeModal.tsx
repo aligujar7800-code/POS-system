@@ -42,11 +42,19 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
           price: product.price,
           barcode: product.barcode,
           quantity: quantity,
-          template: template,
-          protocol: 'zpl'    // default for now
+          template: 'small',
+          protocol: 'epl',    // EPL2 for Zebra TLP 2844
+          offset_x: settings.label_offset_x,
+          offset_y: settings.label_offset_y
         },
         config: {
-          printer_type: 'serial',
+          printer_type: (() => {
+            const port = settings.label_printer_port || settings.printer_port;
+            if (port.toUpperCase().startsWith('COM')) return 'serial';
+            if (port.startsWith('usb:')) return 'usb';
+            if (port.includes('.') && port.includes(':')) return 'network';
+            return 'system';
+          })(),
           port: settings.label_printer_port || settings.printer_port,
           baud_rate: settings.printer_baud
         }
@@ -86,9 +94,9 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
             <div 
               className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center transition-all overflow-hidden"
               style={{
-                width: template === 'large' ? '300px' : '220px',
-                height: template === 'large' ? '196px' : '140px',
-                aspectRatio: template === 'large' ? '464/304' : '304/204'
+                width: '220px',
+                height: '140px',
+                aspectRatio: '304/204'
               }}
             >
               <div className="text-center w-full mb-2">
@@ -107,8 +115,8 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
 
               <Barcode 
                 value={product.barcode} 
-                width={template === 'large' ? 1.4 : 1.1} 
-                height={template === 'large' ? 50 : 35} 
+                width={1.1} 
+                height={35} 
                 fontSize={10}
                 margin={0}
               />
@@ -116,18 +124,26 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
 
             <div className="w-full space-y-4">
               <div className="flex gap-4">
-                <div className="flex-1">
+                <div className="flex-[1.5]">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    Label Size
+                    Alignment (X, Y)
                   </label>
-                  <select 
-                    value={template}
-                    onChange={(e) => setTemplate(e.target.value as any)}
-                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                  >
-                    <option value="large">Large (50x33mm)</option>
-                    <option value="small">Small (30x20mm)</option>
-                  </select>
+                  <div className="flex items-center gap-2 h-10">
+                    <input 
+                      type="number"
+                      title="Horizontal Offset (X)"
+                      value={settings.label_offset_x}
+                      onChange={(e) => settings.setSettings({ label_offset_x: parseInt(e.target.value) || 0 })}
+                      className="flex-1 w-full min-w-0 h-full text-center text-sm font-bold bg-transparent border border-slate-200 rounded-lg focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
+                    />
+                    <input 
+                      type="number"
+                      title="Vertical Offset (Y)"
+                      value={settings.label_offset_y}
+                      onChange={(e) => settings.setSettings({ label_offset_y: parseInt(e.target.value) || 0 })}
+                      className="flex-1 w-full min-w-0 h-full text-center text-sm font-bold bg-transparent border border-slate-200 rounded-lg focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
                 <div className="flex-1">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">

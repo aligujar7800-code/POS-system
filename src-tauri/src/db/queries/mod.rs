@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod cashbook;
 pub mod customers;
 pub mod ledger;
+pub mod license;
 pub mod products;
 pub mod reports;
 pub mod sales;

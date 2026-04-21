@@ -4,9 +4,13 @@ import { useAuthStore } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import AppShell from './components/Layout/AppShell';
 import LoginPage from './pages/Login';
+import LicenseGate from './components/LicenseGate';
 import { cmd } from './lib/utils';
 import { Toaster } from './components/ui/Toaster';
 import { useTranslation } from 'react-i18next';
+import { check } from '@tauri-apps/plugin-updater';
+import { ask, message } from '@tauri-apps/plugin-dialog';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 // Lazy-loaded pages
 const SalesPage      = lazy(() => import('./pages/Sales'));
@@ -58,7 +62,10 @@ export default function App() {
             shop_name: dbSettings.shop_name,
             shop_address: dbSettings.shop_address,
             shop_phone: dbSettings.shop_phone,
+            shop_logo: dbSettings.shop_logo,
+            shop_email: dbSettings.shop_email || '',
             currency_symbol: dbSettings.currency_symbol || 'Rs.',
+            receipt_header: dbSettings.receipt_header || '',
             receipt_footer: dbSettings.receipt_footer,
             tax_rate: parseFloat(dbSettings.tax_rate) || 0,
             low_stock_threshold: parseInt(dbSettings.low_stock_threshold) || 5,
@@ -73,6 +80,32 @@ export default function App() {
       }
     };
     syncSettings();
+
+    // Auto-Updater Check
+    async function checkForUpdates() {
+      try {
+        const update = await check();
+        if (update) {
+          const yes = await ask(`A new version (${update.version}) is available!\n\nDo you want to download and install it now?`, { 
+            title: 'Update Available', 
+            kind: 'info' 
+          });
+          
+          if (yes) {
+            await update.downloadAndInstall();
+            await message('Update installed successfully! The application will now restart.', { title: 'Update Complete', kind: 'info' });
+            await relaunch();
+          }
+        }
+      } catch (e) {
+        console.error('Failed to check for updates:', e);
+      }
+    }
+    
+    // Only check for updates in the desktop app
+    if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+      checkForUpdates();
+    }
   }, [setSettings]);
 
   useEffect(() => {
@@ -84,13 +117,16 @@ export default function App() {
   if (!user) {
     return (
       <Toaster>
-        <LoginPage />
+        <LicenseGate>
+          <LoginPage />
+        </LicenseGate>
       </Toaster>
     );
   }
 
   return (
     <Toaster>
+      <LicenseGate>
       <AppShell>
         <Suspense fallback={<PageLoader />}>
           <Routes>
@@ -117,6 +153,7 @@ export default function App() {
           </Routes>
         </Suspense>
       </AppShell>
-    </Toaster>
+    </LicenseGate>
+  </Toaster>
   );
 }

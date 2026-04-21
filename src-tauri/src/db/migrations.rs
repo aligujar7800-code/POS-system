@@ -58,6 +58,14 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute_batch(MIGRATION_V10)?;
         conn.execute("INSERT INTO schema_version VALUES (10)", [])?;
     }
+    if current_version < 11 {
+        conn.execute_batch(MIGRATION_V11)?;
+        conn.execute("INSERT INTO schema_version VALUES (11)", [])?;
+    }
+    if current_version < 12 {
+        conn.execute_batch(MIGRATION_V12)?;
+        conn.execute("INSERT INTO schema_version VALUES (12)", [])?;
+    }
     let admin_exists: i64 = conn.query_row(
         "SELECT COUNT(*) FROM users WHERE username = 'admin'",
         [],
@@ -481,4 +489,21 @@ CREATE TABLE IF NOT EXISTS return_counters (
 const MIGRATION_V10: &str = "
 -- Add opening_balance to suppliers
 ALTER TABLE suppliers ADD COLUMN opening_balance REAL NOT NULL DEFAULT 0;
+";
+
+const MIGRATION_V11: &str = "
+-- License activation table (singleton row)
+CREATE TABLE IF NOT EXISTS app_license (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    license_key   TEXT NOT NULL,
+    machine_id    TEXT NOT NULL,
+    expiry_date   TEXT,
+    activated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    status        TEXT NOT NULL CHECK(status IN ('active','revoked')) DEFAULT 'active'
+);
+";
+
+const MIGRATION_V12: &str = "
+-- Add expiry_date to app_license if it wasn't created initially
+ALTER TABLE app_license ADD COLUMN expiry_date TEXT;
 ";
