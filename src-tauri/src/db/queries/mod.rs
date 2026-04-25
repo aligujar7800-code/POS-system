@@ -7,6 +7,7 @@ pub mod products;
 pub mod reports;
 pub mod sales;
 pub mod settings;
+pub mod shopify;
 pub mod users;
 pub mod suppliers;
 pub mod financials;

@@ -151,9 +151,9 @@ pub fn get_financial_summary(conn: &Connection) -> Result<FinancialSummary> {
         |r| r.get(0),
     )?;
     
-    // Total Stock Value (Quantity * Cost Price)
+    // Total Stock Value (FIFO: Sum of remaining lots * their actual cost)
     let stock_value: f64 = conn.query_row(
-        "SELECT COALESCE(SUM(total_stock * cost_price), 0) FROM products",
+        "SELECT COALESCE(SUM(remaining_qty * cost_price), 0) FROM purchase_lots",
         [],
         |r| r.get(0),
     )?;

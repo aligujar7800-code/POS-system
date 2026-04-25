@@ -8,6 +8,8 @@
     "opener:default",
     "fs:default",
     "dialog:default",
-    "shell:default"
+    "shell:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

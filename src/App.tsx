@@ -40,10 +40,23 @@ function PageLoader() {
   );
 }
 
-function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+function ProtectedRoute({ children, permission }: { children: React.ReactNode; permission?: string }) {
   const { user } = useAuthStore();
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && user.role !== 'admin') return <Navigate to="/" replace />;
+  
+  if (user.role === 'admin') return <>{children}</>;
+
+  if (permission) {
+    try {
+      const perms = JSON.parse(user.permissions || '[]');
+      if (!perms.includes(permission)) {
+        return <Navigate to="/" replace />;
+      }
+    } catch (e) {
+      return <Navigate to="/" replace />;
+    }
+  }
+  
   return <>{children}</>;
 }
 
@@ -84,25 +97,31 @@ export default function App() {
     // Auto-Updater Check
     async function checkForUpdates() {
       try {
+        console.log('Checking for updates...');
         const update = await check();
-        if (update) {
+        console.log('Update result:', update);
+
+        if (update && update.available) {
+          console.log(`New version found: ${update.version}`);
           const yes = await ask(`A new version (${update.version}) is available!\n\nDo you want to download and install it now?`, { 
             title: 'Update Available', 
             kind: 'info' 
           });
           
           if (yes) {
+            console.log('Downloading and installing update...');
             await update.downloadAndInstall();
-            await message('Update installed successfully! The application will now restart.', { title: 'Update Complete', kind: 'info' });
+            console.log('Update installed successfully!');
             await relaunch();
           }
+        } else {
+          console.log('No update available.');
         }
       } catch (e) {
         console.error('Failed to check for updates:', e);
       }
     }
     
-    // Only check for updates in the desktop app
     if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
       checkForUpdates();
     }
@@ -131,24 +150,24 @@ export default function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/"           element={<Navigate to="/sales" replace />} />
-            <Route path="/sales"      element={<ProtectedRoute><SalesPage /></ProtectedRoute>} />
-            <Route path="/receipts"   element={<ProtectedRoute><ReceiptsPage /></ProtectedRoute>} />
-            <Route path="/inward"     element={<ProtectedRoute adminOnly><InwardPage /></ProtectedRoute>} />
-            <Route path="/ledger/:id" element={<ProtectedRoute><CustomerLedger /></ProtectedRoute>} />
-            <Route path="/suppliers" element={<ProtectedRoute adminOnly><SuppliersPage /></ProtectedRoute>} />
-            <Route path="/suppliers/:id" element={<ProtectedRoute adminOnly><SupplierLedgerPage /></ProtectedRoute>} />
-            <Route path="/cash-flow" element={<ProtectedRoute><CashFlowPage /></ProtectedRoute>} />
-            <Route path="/inventory"  element={<ProtectedRoute adminOnly><InventoryPage /></ProtectedRoute>} />
-            <Route path="/inventory/categories" element={<ProtectedRoute adminOnly><CategoriesPage /></ProtectedRoute>} />
-            <Route path="/inventory/bulk" element={<ProtectedRoute adminOnly><BulkAddPage /></ProtectedRoute>} />
-            <Route path="/inventory/new"      element={<ProtectedRoute adminOnly><ProductForm /></ProtectedRoute>} />
-            <Route path="/inventory/edit/:id" element={<ProtectedRoute adminOnly><ProductForm /></ProtectedRoute>} />
-            <Route path="/stock-ledger" element={<ProtectedRoute adminOnly><StockLedgerPage /></ProtectedRoute>} />
-            <Route path="/stock-adjustment" element={<ProtectedRoute adminOnly><StockAdjustmentPage /></ProtectedRoute>} />
-            <Route path="/accounts" element={<ProtectedRoute adminOnly><ChartOfAccountsPage /></ProtectedRoute>} />
-            <Route path="/accounts/general-ledger" element={<ProtectedRoute adminOnly><GeneralLedgerPage /></ProtectedRoute>} />
-            <Route path="/reports"    element={<ProtectedRoute adminOnly><ReportsPage /></ProtectedRoute>} />
-            <Route path="/settings"   element={<ProtectedRoute adminOnly><SettingsPage /></ProtectedRoute>} />
+            <Route path="/sales"      element={<ProtectedRoute permission="sales"><SalesPage /></ProtectedRoute>} />
+            <Route path="/receipts"   element={<ProtectedRoute permission="sales"><ReceiptsPage /></ProtectedRoute>} />
+            <Route path="/inward"     element={<ProtectedRoute permission="inventory"><InwardPage /></ProtectedRoute>} />
+            <Route path="/ledger/:id" element={<ProtectedRoute permission="customers"><CustomerLedger /></ProtectedRoute>} />
+            <Route path="/suppliers" element={<ProtectedRoute permission="suppliers"><SuppliersPage /></ProtectedRoute>} />
+            <Route path="/suppliers/:id" element={<ProtectedRoute permission="suppliers"><SupplierLedgerPage /></ProtectedRoute>} />
+            <Route path="/cash-flow" element={<ProtectedRoute permission="accounts"><CashFlowPage /></ProtectedRoute>} />
+            <Route path="/inventory"  element={<ProtectedRoute permission="inventory"><InventoryPage /></ProtectedRoute>} />
+            <Route path="/inventory/categories" element={<ProtectedRoute permission="inventory"><CategoriesPage /></ProtectedRoute>} />
+            <Route path="/inventory/bulk" element={<ProtectedRoute permission="inventory"><BulkAddPage /></ProtectedRoute>} />
+            <Route path="/inventory/new"      element={<ProtectedRoute permission="inventory"><ProductForm /></ProtectedRoute>} />
+            <Route path="/inventory/edit/:id" element={<ProtectedRoute permission="inventory"><ProductForm /></ProtectedRoute>} />
+            <Route path="/stock-ledger" element={<ProtectedRoute permission="inventory"><StockLedgerPage /></ProtectedRoute>} />
+            <Route path="/stock-adjustment" element={<ProtectedRoute permission="stock_adjustment"><StockAdjustmentPage /></ProtectedRoute>} />
+            <Route path="/accounts" element={<ProtectedRoute permission="accounts"><ChartOfAccountsPage /></ProtectedRoute>} />
+            <Route path="/accounts/general-ledger" element={<ProtectedRoute permission="accounts"><GeneralLedgerPage /></ProtectedRoute>} />
+            <Route path="/reports"    element={<ProtectedRoute permission="reports"><ReportsPage /></ProtectedRoute>} />
+            <Route path="/settings"   element={<ProtectedRoute permission="settings"><SettingsPage /></ProtectedRoute>} />
             <Route path="*"           element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

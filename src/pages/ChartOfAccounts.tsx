@@ -52,6 +52,7 @@ export default function ChartOfAccounts() {
   const [newType, setNewType] = useState('expense');
   const [newCategory, setNewCategory] = useState('operating_expense');
   const [newNormal, setNewNormal] = useState('debit');
+  const [newOpeningBalance, setNewOpeningBalance] = useState('');
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['accounts'],
@@ -95,7 +96,14 @@ export default function ChartOfAccounts() {
 
   const createMutation = useMutation({
     mutationFn: (payload: any) => cmd('create_account_entry', { payload }),
-    onSuccess: () => { toast('Account created', 'success'); qc.invalidateQueries({ queryKey: ['accounts'] }); setShowAdd(false); setNewCode(''); setNewName(''); },
+    onSuccess: () => { 
+      toast('Account created', 'success'); 
+      qc.invalidateQueries({ queryKey: ['accounts'] }); 
+      setShowAdd(false); 
+      setNewCode(''); 
+      setNewName(''); 
+      setNewOpeningBalance('');
+    },
     onError: (e: any) => toast(e.toString(), 'error'),
   });
 
@@ -316,10 +324,34 @@ export default function ChartOfAccounts() {
                   </select>
                 </div>
               </div>
+              <div>
+                <label className="label">Opening Balance (Optional)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{currency_symbol}</span>
+                  <input 
+                    type="number"
+                    value={newOpeningBalance} 
+                    onChange={e => setNewOpeningBalance(e.target.value)} 
+                    placeholder="0.00" 
+                    className="input pl-8" 
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 italic">* Offset against Owner Capital (3001)</p>
+              </div>
             </div>
             <div className="flex justify-end gap-2 mt-6">
               <button onClick={() => setShowAdd(false)} className="btn-secondary">Cancel</button>
-              <button onClick={() => createMutation.mutate({ code: newCode, name: newName, name_ur: newNameUr || null, account_type: newType, category: newCategory, normal_balance: newNormal, parent_id: null, description: null })} className="btn-primary" disabled={!newCode || !newName}>Create Account</button>
+              <button onClick={() => createMutation.mutate({ 
+                code: newCode, 
+                name: newName, 
+                name_ur: newNameUr || null, 
+                account_type: newType, 
+                category: newCategory, 
+                normal_balance: newNormal, 
+                parent_id: null, 
+                description: null,
+                opening_balance: parseFloat(newOpeningBalance) || 0
+              })} className="btn-primary" disabled={!newCode || !newName}>Create Account</button>
             </div>
           </div>
         </>

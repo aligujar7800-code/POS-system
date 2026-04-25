@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cmd, formatCurrency } from '../lib/utils';
+import { backgroundSyncInventory, isShopifyConfigured } from '../lib/shopify';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToast } from '../components/ui/Toaster';
@@ -39,6 +40,7 @@ const REASONS = [
   'Expired / Obsolete',
   'Returned to Supplier',
   'Gift / Promotion',
+  'Opening Stock',
   'Other'
 ];
 
@@ -104,6 +106,21 @@ export default function StockAdjustment() {
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['financial-ledger'] });
       qc.invalidateQueries({ queryKey: ['total-udhaar'] });
+
+      // Shopify: Sync updated inventory in background
+      if (selectedVariant) {
+        const varId = selectedVariant.id;
+        const newQuantity = parseInt(newQty);
+        isShopifyConfigured().then(configured => {
+          if (configured) {
+            cmd<Record<string, string>>('get_all_settings').then(s => {
+              if (s?.shopify_auto_sync === '1') {
+                backgroundSyncInventory(varId, newQuantity);
+              }
+            });
+          }
+        });
+      }
       setNewQty('');
       setCustomReason('');
       setLinkFinance(false);

@@ -303,7 +303,7 @@ export default function ReportsPage() {
             ].map((row) => (
               <div key={row.label} className={`flex justify-between items-center py-2 ${row.bold ? 'border-t border-slate-200 font-bold text-base' : 'text-sm'}`}>
                 <span className="text-slate-600">{row.label}</span>
-                <span className={row.color}>{fmt(Math.abs(row.value))}</span>
+                <span className={row.color}>{fmt(row.value)}</span>
               </div>
             ))}
           </div>

@@ -750,15 +750,16 @@ pub fn add_inward_stock(conn: &mut Connection, payload: &InwardStockPayload) -> 
         }
 
         tx.execute(
-            "INSERT INTO stock_history (product_id, variant_id, prev_qty, new_qty, reason, changed_by)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO stock_history (product_id, variant_id, prev_qty, new_qty, reason, changed_by, unit_cost)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 item.product_id,
                 actual_variant_id,
                 prev_qty,
                 current_qty,
                 reason,
-                payload.created_by
+                payload.created_by,
+                item.cost_price
             ],
         )?;
     }
@@ -851,7 +852,7 @@ pub fn get_inward_history(conn: &Connection) -> Result<Vec<InwardHistoryEntry>> 
                 IFNULL(pv.size, '') as size, 
                 IFNULL(pv.color, '') as color, 
                 (sh.new_qty - sh.prev_qty) as received_qty,
-                p.cost_price,
+                COALESCE(sh.unit_cost, p.cost_price),
                 sh.reason,
                 sh.changed_at
          FROM stock_history sh

@@ -135,11 +135,11 @@ pub fn profit_loss(conn: &Connection, from: &str, to: &str) -> Result<serde_json
 
 pub fn inventory_valuation(conn: &Connection) -> Result<serde_json::Value> {
     let row = conn.query_row(
-        "SELECT COUNT(DISTINCT p.id),
-                COALESCE(SUM(pv.quantity * p.cost_price), 0),
-                COALESCE(SUM(pv.quantity * p.sale_price), 0)
-         FROM products p
-         JOIN product_variants pv ON pv.product_id = p.id",
+        "SELECT 
+            (SELECT COUNT(*) FROM products WHERE is_active = 1),
+            (SELECT COALESCE(SUM(remaining_qty * cost_price), 0) FROM purchase_lots),
+            (SELECT COALESCE(SUM(pv.quantity * p.sale_price), 0) 
+             FROM products p JOIN product_variants pv ON pv.product_id = p.id WHERE p.is_active = 1)",
         [],
         |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?, r.get::<_, f64>(2)?)),
     )?;

@@ -6,7 +6,7 @@ import { cmd } from '../lib/utils';
 import { useToast } from '../components/ui/Toaster';
 import { ArrowLeft, Plus, Trash2, Save, RefreshCw, Layers } from 'lucide-react';
 
-interface Category { id: number; name: string; }
+interface Category { id: number; name: string; parent_id?: number | null; }
 
 interface Category { id: number; name: string; }
 interface VariantEntry {
@@ -26,6 +26,7 @@ interface BulkProductGroup {
   name: string;
   sku: string;
   article_number: string;
+  main_category_id: string;
   category_id: string;
   sizeGroups: SizeGroup[];
 }
@@ -37,6 +38,7 @@ const emptyProduct = (articleNumber: string = ''): BulkProductGroup => ({
   name: '',
   sku: '',
   article_number: articleNumber,
+  main_category_id: '',
   category_id: '',
   sizeGroups: [emptySizeGroup()]
 });
@@ -48,19 +50,20 @@ export default function BulkAddProducts() {
   const qc = useQueryClient();
 
   const [products, setProducts] = useState<BulkProductGroup[]>([emptyProduct()]);
-  
-  React.useEffect(() => {
-    cmd<string>('generate_article_number').then(art => {
-      setProducts([emptyProduct(art)]);
-    }).catch(console.error);
-  }, []);
-  const [mainCategory, setMainCategory] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: () => cmd('get_all_categories'),
   });
+
+  const mainCategories = categories.filter(c => !c.parent_id);
+
+  React.useEffect(() => {
+    cmd<string>('generate_article_number').then(art => {
+      setProducts([emptyProduct(art)]);
+    }).catch(console.error);
+  }, []);
 
   const addProduct = async () => {
     try {
@@ -199,7 +202,7 @@ export default function BulkAddProducts() {
               name: p.name,
               sku: p.sku || null,
               article_number: p.article_number || null,
-              category_id: p.category_id ? parseInt(p.category_id) : (mainCategory ? categories.find(cat => cat.name === mainCategory)?.id : null),
+              category_id: p.category_id ? parseInt(p.category_id) : (p.main_category_id ? parseInt(p.main_category_id) : null),
               size: g.size || null,
               color: c.color || null,
               cost_price: parseFloat(c.cost_price) || 0,
@@ -257,26 +260,9 @@ export default function BulkAddProducts() {
       </div>
 
       <div className="flex-1 overflow-auto bg-slate-50 p-6 space-y-8">
-        {/* Global Controls */}
-        <div className="card p-4 bg-white shadow-sm flex items-center gap-6">
-           <div className="flex-shrink-0">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Global Main Category</span>
-              <div className="flex gap-1">
-                {['Men', 'Women', 'Kids', 'Accessories'].map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setMainCategory(m)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                      mainCategory === m ? 'bg-brand-600 text-white border-brand-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-brand-300'
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-           </div>
-           <div className="h-10 w-px bg-slate-100" />
-           <p className="text-xs text-slate-400 italic">Pre-fills category for all items in this batch unless overridden individually.</p>
+        <div className="flex items-center gap-3 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
+           <Layers className="w-4 h-4 text-blue-600" />
+           <p className="text-xs text-blue-700">Ab aap har product ki <b>Main Category</b> alag se select kar sakte hain. Sub-category khud filter ho jaye gi.</p>
         </div>
 
         {/* Product Cards */}
@@ -318,14 +304,32 @@ export default function BulkAddProducts() {
                 />
               </div>
               <div>
-                <label className="label text-[10px] font-black text-slate-400 uppercase">Category Override</label>
+                <label className="label text-[10px] font-black text-slate-400 uppercase text-blue-600">Main Category *</label>
+                <select 
+                  value={p.main_category_id} 
+                  onChange={e => {
+                    updateProductInfo(p.id, 'main_category_id', e.target.value);
+                    updateProductInfo(p.id, 'category_id', ''); // reset sub-category
+                  }}
+                  className="input border-blue-200 bg-blue-50/30"
+                >
+                  <option value="">Select Main...</option>
+                  {mainCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label text-[10px] font-black text-slate-400 uppercase">Category / Sub-Type</label>
                 <select 
                   value={p.category_id} 
                   onChange={e => updateProductInfo(p.id, 'category_id', e.target.value)}
                   className="input"
+                  disabled={!p.main_category_id}
                 >
-                  <option value="">Default ({mainCategory || 'None'})</option>
-                  {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                  <option value="">{p.main_category_id ? 'Select Sub-Category...' : 'Choose Main First'}</option>
+                  {categories
+                    .filter(cat => cat.parent_id === (p.main_category_id ? parseInt(p.main_category_id) : -1))
+                    .map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)
+                  }
                 </select>
               </div>
             </div>

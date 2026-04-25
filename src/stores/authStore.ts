@@ -6,6 +6,7 @@ export interface User {
   username: string;
   role: 'admin' | 'cashier';
   is_active: boolean;
+  permissions?: string;
 }
 
 interface AuthState {

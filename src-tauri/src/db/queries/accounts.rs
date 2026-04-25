@@ -103,6 +103,7 @@ pub struct CreateAccountPayload {
     pub normal_balance: String,
     pub parent_id: Option<i64>,
     pub description: Option<String>,
+    pub opening_balance: Option<f64>,
 }
 
 // ── Functions ────────────────────────────────────────────────
@@ -181,7 +182,56 @@ pub fn create_account(conn: &Connection, payload: &CreateAccountPayload) -> Resu
             payload.parent_id, payload.description
         ],
     )?;
-    Ok(conn.last_insert_rowid())
+    let account_id = conn.last_insert_rowid();
+
+    // Handle Opening Balance
+    if let Some(ob) = payload.opening_balance {
+        if ob != 0.0 {
+            let capital_account_id = get_account_id_by_code(conn, "3001")?;
+            let mut lines = Vec::new();
+            
+            if payload.normal_balance == "debit" {
+                // DR: New Account, CR: Owner Capital
+                lines.push(CreateJournalLine {
+                    account_id,
+                    debit_amount: ob.abs(),
+                    credit_amount: 0.0,
+                    description: Some("Opening Balance".to_string()),
+                });
+                lines.push(CreateJournalLine {
+                    account_id: capital_account_id,
+                    debit_amount: 0.0,
+                    credit_amount: ob.abs(),
+                    description: Some(format!("Opening Balance Offset: {}", payload.name)),
+                });
+            } else {
+                // CR: New Account, DR: Owner Capital
+                lines.push(CreateJournalLine {
+                    account_id,
+                    debit_amount: 0.0,
+                    credit_amount: ob.abs(),
+                    description: Some("Opening Balance".to_string()),
+                });
+                lines.push(CreateJournalLine {
+                    account_id: capital_account_id,
+                    debit_amount: ob.abs(),
+                    credit_amount: 0.0,
+                    description: Some(format!("Opening Balance Offset: {}", payload.name)),
+                });
+            }
+
+            let entry = CreateJournalEntry {
+                entry_date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+                description: format!("Opening Balance: {}", payload.name),
+                reference_type: Some("opening_balance".to_string()),
+                reference_id: Some(account_id),
+                lines,
+            };
+            let _ = create_journal_entry(conn, &entry, None);
+        }
+    }
+
+    Ok(account_id)
 }
 
 pub fn update_account(conn: &Connection, id: i64, payload: &CreateAccountPayload) -> Result<()> {

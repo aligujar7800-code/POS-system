@@ -105,6 +105,12 @@ pub fn change_password(
     users::change_password(&conn, user_id, &new_password).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn delete_user(db: State<DbState>, user_id: i64) -> Result<(), String> {
+    let conn = db.lock();
+    users::delete_user(&conn, user_id).map_err(|e| e.to_string())
+}
+
 // ─── Products ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -836,6 +842,394 @@ pub fn repair_accounting_data(db: State<DbState>) -> Result<usize, String> {
 pub fn get_financial_summary(db: State<DbState>) -> Result<financials::FinancialSummary, String> {
     let conn = db.lock();
     financials::get_financial_summary(&conn).map_err(|e| e.to_string())
+}
+
+// ─── Shopify Integration ────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn shopify_test_connection(
+    db: State<'_, DbState>,
+) -> Result<crate::shopify::client::ShopInfo, String> {
+    let (domain, token) = {
+        let conn = db.lock();
+        let settings = settings::get_all_settings(&conn).map_err(|e| e.to_string())?;
+        let domain = settings.get("shopify_domain").cloned().unwrap_or_default();
+        let token = settings.get("shopify_token").cloned().unwrap_or_default();
+        (domain, token)
+    };
+    if domain.is_empty() || token.is_empty() {
+        return Err("Shopify domain and access token are required".into());
+    }
+    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    client.test_connection().await
+}
+
+#[tauri::command]
+pub async fn shopify_get_locations(
+    db: State<'_, DbState>,
+) -> Result<Vec<crate::shopify::client::ShopifyLocation>, String> {
+    let (domain, token) = get_shopify_creds(&db)?;
+    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    client.get_locations().await
+}
+
+#[tauri::command]
+pub async fn shopify_sync_product(
+    db: State<'_, DbState>,
+    product_id: i64,
+) -> Result<String, String> {
+    let (domain, token) = get_shopify_creds(&db)?;
+    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+
+    // Fetch local product + variants
+    let (product, variants, existing_mappings) = {
+        let conn = db.lock();
+        let prod = products::get_product_by_id(&conn, product_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("Product not found")?;
+        let vars = products::get_product_variants(&conn, product_id)
+            .map_err(|e| e.to_string())?;
+        let maps = shopify::get_mapping_by_local_product(&conn, product_id)
+            .map_err(|e| e.to_string())?;
+        (prod, vars, maps)
+    };
+
+    // Check if product already exists on Shopify
+    let has_shopify_id = existing_mappings.iter()
+        .find(|m| m.local_variant_id.is_none() || m.shopify_product_id.is_some())
+        .and_then(|m| m.shopify_product_id);
+
+    if let Some(shopify_pid) = has_shopify_id {
+        // UPDATE existing product
+        let shopify_variants: Vec<crate::shopify::client::ShopifyVariant> = variants.iter().map(|v| {
+            let existing = existing_mappings.iter().find(|m| m.local_variant_id == Some(v.id));
+            crate::shopify::client::ShopifyVariant {
+                id: existing.and_then(|m| m.shopify_variant_id),
+                title: Some(format!("{} / {}", v.size.clone().unwrap_or_default(), v.color.clone().unwrap_or_default())),
+                price: Some(format!("{:.2}", v.variant_price.unwrap_or(product.sale_price))),
+                sku: v.variant_barcode.clone(),
+                barcode: v.variant_barcode.clone(),
+                option1: v.size.clone(),
+                option2: v.color.clone(),
+                inventory_management: Some("shopify".to_string()),
+                inventory_quantity: Some(v.quantity),
+            }
+        }).collect();
+
+        let update = crate::shopify::client::UpdateShopifyProduct {
+            id: shopify_pid,
+            title: Some(product.name.clone()),
+            body_html: product.description.clone(),
+            variants: Some(shopify_variants),
+        };
+
+        let result = client.update_product(shopify_pid, &update).await;
+
+        match result {
+            Ok(resp) => {
+                let conn = db.lock();
+                for (i, sv) in resp.variants.iter().enumerate() {
+                    if let Some(local_var) = variants.get(i) {
+                        let _ = shopify::upsert_mapping(
+                            &conn, product_id, Some(local_var.id),
+                            Some(resp.id), Some(sv.id), Some(sv.inventory_item_id),
+                        );
+                    }
+                }
+                Ok(format!("Updated product on Shopify (ID: {})", resp.id))
+            }
+            Err(e) => {
+                // Queue for retry
+                let conn = db.lock();
+                let payload = serde_json::json!({
+                    "action": "update_product",
+                    "product_id": product_id,
+                    "shopify_product_id": shopify_pid,
+                }).to_string();
+                let _ = shopify::enqueue_sync(&conn, "update_product", &payload);
+                Err(format!("Shopify sync failed (queued for retry): {}", e))
+            }
+        }
+    } else {
+        // CREATE new product
+        let shopify_variants: Vec<crate::shopify::client::ShopifyVariant> = variants.iter().map(|v| {
+            crate::shopify::client::ShopifyVariant {
+                id: None,
+                title: Some(format!("{} / {}", v.size.clone().unwrap_or_default(), v.color.clone().unwrap_or_default())),
+                price: Some(format!("{:.2}", v.variant_price.unwrap_or(product.sale_price))),
+                sku: v.variant_barcode.clone(),
+                barcode: v.variant_barcode.clone(),
+                option1: v.size.clone(),
+                option2: v.color.clone(),
+                inventory_management: Some("shopify".to_string()),
+                inventory_quantity: Some(v.quantity),
+            }
+        }).collect();
+
+        let create = crate::shopify::client::CreateShopifyProduct {
+            title: product.name.clone(),
+            body_html: product.description.clone(),
+            vendor: product.brand.clone(),
+            product_type: product.category_name.clone(),
+            variants: shopify_variants,
+        };
+
+        let result = client.create_product(&create).await;
+
+        match result {
+            Ok(resp) => {
+                let conn = db.lock();
+                // Save mappings for product + each variant
+                for (i, sv) in resp.variants.iter().enumerate() {
+                    if let Some(local_var) = variants.get(i) {
+                        let _ = shopify::upsert_mapping(
+                            &conn, product_id, Some(local_var.id),
+                            Some(resp.id), Some(sv.id), Some(sv.inventory_item_id),
+                        );
+                    }
+                }
+                Ok(format!("Created product on Shopify (ID: {})", resp.id))
+            }
+            Err(e) => {
+                let conn = db.lock();
+                let payload = serde_json::json!({
+                    "action": "create_product",
+                    "product_id": product_id,
+                }).to_string();
+                let _ = shopify::enqueue_sync(&conn, "create_product", &payload);
+                Err(format!("Shopify sync failed (queued for retry): {}", e))
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn shopify_sync_inventory(
+    db: State<'_, DbState>,
+    variant_id: i64,
+    quantity: i64,
+) -> Result<String, String> {
+    let (domain, token) = get_shopify_creds(&db)?;
+    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+
+    let (mapping, location_id) = {
+        let conn = db.lock();
+        let m = shopify::get_mapping_by_local_variant(&conn, variant_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("No Shopify mapping found for this variant. Sync the product first.")?;
+        let settings = settings::get_all_settings(&conn).map_err(|e| e.to_string())?;
+        let loc = settings.get("shopify_location_id").cloned().unwrap_or_default()
+            .parse::<i64>().unwrap_or(0);
+        (m, loc)
+    };
+
+    if location_id == 0 {
+        return Err("Shopify location not configured. Go to Settings → Shopify.".into());
+    }
+
+    let inv_item_id = mapping.shopify_inventory_item_id
+        .ok_or("No inventory_item_id mapped for this variant")?;
+
+    match client.set_inventory_level(inv_item_id, location_id, quantity).await {
+        Ok(_) => Ok(format!("Inventory updated on Shopify (qty: {})", quantity)),
+        Err(e) => {
+            let conn = db.lock();
+            let payload = serde_json::json!({
+                "action": "set_inventory",
+                "variant_id": variant_id,
+                "quantity": quantity,
+                "inventory_item_id": inv_item_id,
+                "location_id": location_id,
+            }).to_string();
+            let _ = shopify::enqueue_sync(&conn, "set_inventory", &payload);
+            Err(format!("Inventory sync failed (queued for retry): {}", e))
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn shopify_create_order(
+    db: State<'_, DbState>,
+    sale_id: i64,
+) -> Result<String, String> {
+    let (domain, token) = get_shopify_creds(&db)?;
+    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+
+    let (sale, items) = {
+        let conn = db.lock();
+        sales::get_sale_with_items(&conn, sale_id).map_err(|e| e.to_string())?
+    };
+
+    // Build line items, mapping local variant IDs to Shopify variant IDs
+    let mut line_items = Vec::new();
+    {
+        let conn = db.lock();
+        for item in &items {
+            let shopify_variant_id = if let Some(vid) = item.variant_id {
+                shopify::get_mapping_by_local_variant(&conn, vid)
+                    .ok()
+                    .flatten()
+                    .and_then(|m| m.shopify_variant_id)
+            } else {
+                None
+            };
+
+            line_items.push(crate::shopify::client::ShopifyLineItem {
+                variant_id: shopify_variant_id,
+                title: if shopify_variant_id.is_none() { Some(item.product_name.clone()) } else { None },
+                quantity: item.quantity,
+                price: format!("{:.2}", item.unit_price),
+            });
+        }
+    }
+
+    let gateway = match sale.payment_method.as_str() {
+        "cash" => "cash",
+        "card" => "card",
+        _ => "manual",
+    };
+
+    let order = crate::shopify::client::CreateShopifyOrder {
+        line_items,
+        financial_status: Some("paid".to_string()),
+        note: Some(format!("POS Sale: {} | {}", sale.invoice_number, sale.payment_method)),
+        tags: Some("pos-sale".to_string()),
+        transactions: Some(vec![crate::shopify::client::ShopifyTransaction {
+            kind: "sale".to_string(),
+            status: "success".to_string(),
+            amount: format!("{:.2}", sale.total_amount),
+            gateway: Some(gateway.to_string()),
+        }]),
+    };
+
+    match client.create_order(&order).await {
+        Ok(resp) => Ok(format!("Order created on Shopify: {} (ID: {})", resp.name, resp.id)),
+        Err(e) => {
+            let conn = db.lock();
+            let payload = serde_json::json!({
+                "action": "create_order",
+                "sale_id": sale_id,
+            }).to_string();
+            let _ = shopify::enqueue_sync(&conn, "create_order", &payload);
+            Err(format!("Order sync failed (queued for retry): {}", e))
+        }
+    }
+}
+
+#[tauri::command]
+pub fn shopify_get_mappings(db: State<DbState>) -> Result<Vec<shopify::ShopifyMapping>, String> {
+    let conn = db.lock();
+    shopify::get_all_mappings(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shopify_get_queue_stats(db: State<DbState>) -> Result<Value, String> {
+    let conn = db.lock();
+    shopify::get_queue_stats(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shopify_get_pending_syncs(db: State<DbState>) -> Result<Vec<shopify::SyncQueueItem>, String> {
+    let conn = db.lock();
+    shopify::get_pending_syncs(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn shopify_retry_pending(
+    db: State<'_, DbState>,
+) -> Result<String, String> {
+    let pending = {
+        let conn = db.lock();
+        shopify::get_pending_syncs(&conn).map_err(|e| e.to_string())?
+    };
+
+    if pending.is_empty() {
+        return Ok("No pending syncs to retry".into());
+    }
+
+    let (domain, token) = get_shopify_creds(&db)?;
+    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
+
+    for item in &pending {
+        let payload: Value = serde_json::from_str(&item.payload).unwrap_or_default();
+        let action = payload["action"].as_str().unwrap_or("");
+
+        let result = match action {
+            "set_inventory" => {
+                let inv_id = payload["inventory_item_id"].as_i64().unwrap_or(0);
+                let loc_id = payload["location_id"].as_i64().unwrap_or(0);
+                let qty = payload["quantity"].as_i64().unwrap_or(0);
+                client.set_inventory_level(inv_id, loc_id, qty).await.map(|_| ())
+            }
+            "create_product" => {
+                // Re-trigger full product sync
+                let pid = payload["product_id"].as_i64().unwrap_or(0);
+                if pid > 0 {
+                    // Mark as done, the caller should re-invoke shopify_sync_product
+                    let conn = db.lock();
+                    let _ = shopify::mark_sync_done(&conn, item.id);
+                    success_count += 1;
+                    continue;
+                }
+                Err("Invalid product_id".into())
+            }
+            "update_product" => {
+                let pid = payload["product_id"].as_i64().unwrap_or(0);
+                if pid > 0 {
+                    let conn = db.lock();
+                    let _ = shopify::mark_sync_done(&conn, item.id);
+                    success_count += 1;
+                    continue;
+                }
+                Err("Invalid product_id".into())
+            }
+            "create_order" => {
+                let sid = payload["sale_id"].as_i64().unwrap_or(0);
+                if sid > 0 {
+                    let conn = db.lock();
+                    let _ = shopify::mark_sync_done(&conn, item.id);
+                    success_count += 1;
+                    continue;
+                }
+                Err("Invalid sale_id".into())
+            }
+            _ => Err(format!("Unknown action: {}", action)),
+        };
+
+        let conn = db.lock();
+        match result {
+            Ok(_) => {
+                let _ = shopify::mark_sync_done(&conn, item.id);
+                success_count += 1;
+            }
+            Err(e) => {
+                let _ = shopify::mark_sync_failed(&conn, item.id, &e);
+                fail_count += 1;
+            }
+        }
+    }
+
+    Ok(format!("Retry complete: {} succeeded, {} failed", success_count, fail_count))
+}
+
+#[tauri::command]
+pub fn shopify_clear_done_syncs(db: State<DbState>) -> Result<usize, String> {
+    let conn = db.lock();
+    shopify::clear_done_syncs(&conn).map_err(|e| e.to_string())
+}
+
+fn get_shopify_creds(db: &State<DbState>) -> Result<(String, String), String> {
+    let conn = db.lock();
+    let settings = settings::get_all_settings(&conn).map_err(|e| e.to_string())?;
+    let domain = settings.get("shopify_domain").cloned().unwrap_or_default();
+    let token = settings.get("shopify_token").cloned().unwrap_or_default();
+    if domain.is_empty() || token.is_empty() {
+        return Err("Shopify not configured. Go to Settings → Shopify.".into());
+    }
+    Ok((domain, token))
 }
 
 /// Initialize database — called at app start

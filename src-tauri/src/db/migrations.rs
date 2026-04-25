@@ -63,7 +63,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_version VALUES (11)", [])?;
     }
     if current_version < 12 {
-        conn.execute_batch(MIGRATION_V12)?;
+        let _ = conn.execute_batch(MIGRATION_V12); // Ignore duplicate column error if it already exists from V11
         conn.execute("INSERT INTO schema_version VALUES (12)", [])?;
     }
     let admin_exists: i64 = conn.query_row(
@@ -80,8 +80,37 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    if current_version < 13 {
+        let _ = conn.execute_batch(MIGRATION_V13);
+        conn.execute("INSERT INTO schema_version VALUES (13)", [])?;
+    }
+
+    if current_version < 14 {
+        let _ = conn.execute_batch(MIGRATION_V14);
+        conn.execute("INSERT INTO schema_version VALUES (14)", [])?;
+    }
+
+    if current_version < 15 {
+        let _ = conn.execute_batch(MIGRATION_V15);
+        conn.execute("INSERT INTO schema_version VALUES (15)", [])?;
+    }
+
     Ok(())
 }
+
+const MIGRATION_V13: &str = "
+-- Add unit_cost to stock_history for accurate historical cost tracking
+ALTER TABLE stock_history ADD COLUMN unit_cost REAL;
+";
+
+const MIGRATION_V14: &str = "
+-- Add permissions to users table to store module access
+ALTER TABLE users ADD COLUMN permissions TEXT;
+-- Set default full permissions for existing admin
+UPDATE users SET permissions = '[\"sales\",\"inventory\",\"reports\",\"settings\",\"suppliers\",\"customers\",\"accounts\",\"expenses\",\"stock_adjustment\"]' WHERE role = 'admin';
+-- Set default limited permissions for existing cashiers
+UPDATE users SET permissions = '[\"sales\"]' WHERE role = 'cashier' AND permissions IS NULL;
+";
 
 const MIGRATION_V1: &str = "
 -- Categories
@@ -506,4 +535,36 @@ CREATE TABLE IF NOT EXISTS app_license (
 const MIGRATION_V12: &str = "
 -- Add expiry_date to app_license if it wasn't created initially
 ALTER TABLE app_license ADD COLUMN expiry_date TEXT;
+";
+
+const MIGRATION_V15: &str = "
+-- Shopify ID mappings: link local products/variants to Shopify counterparts
+CREATE TABLE IF NOT EXISTS shopify_mappings (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    local_product_id         INTEGER NOT NULL,
+    local_variant_id         INTEGER,
+    shopify_product_id       INTEGER,
+    shopify_variant_id       INTEGER,
+    shopify_inventory_item_id INTEGER,
+    synced_at                TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(local_product_id, local_variant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shopify_map_product ON shopify_mappings(local_product_id);
+CREATE INDEX IF NOT EXISTS idx_shopify_map_variant ON shopify_mappings(local_variant_id);
+CREATE INDEX IF NOT EXISTS idx_shopify_map_shopify_pid ON shopify_mappings(shopify_product_id);
+
+-- Shopify sync queue: stores failed API calls for retry
+CREATE TABLE IF NOT EXISTS shopify_sync_queue (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_type   TEXT NOT NULL,
+    payload       TEXT NOT NULL,
+    error_message TEXT,
+    retry_count   INTEGER NOT NULL DEFAULT 0,
+    status        TEXT NOT NULL CHECK(status IN ('pending','failed','done')) DEFAULT 'pending',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_shopify_queue_status ON shopify_sync_queue(status);
 ";

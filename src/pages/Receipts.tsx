@@ -42,7 +42,8 @@ export default function ReceiptsPage() {
   const {
     printer_type, printer_port, printer_baud, currency_symbol,
     shop_name, shop_address, shop_phone, shop_logo, shop_email,
-    receipt_header, receipt_footer
+    receipt_header, receipt_footer,
+    logo_width, logo_height, logo_align, receipt_font
   } = useSettingsStore();
 
   const [query, setQuery] = useState('');
@@ -258,6 +259,10 @@ export default function ReceiptsPage() {
           shop_email={shop_email}
           receipt_header={receipt_header}
           receipt_footer={receipt_footer}
+          logo_width={logo_width}
+          logo_height={logo_height}
+          logo_align={logo_align}
+          receipt_font={receipt_font}
         />
       )}
 
@@ -274,7 +279,9 @@ export default function ReceiptsPage() {
 
 export function SaleDetailsModal({
   saleId, onClose, onReprint, onReturn, currency_symbol, printer_type,
-  shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer
+  shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer,
+  logo_width, logo_height, logo_align, receipt_font,
+  autoPrint = false
 }: {
   saleId: number;
   onClose: () => void;
@@ -289,11 +296,26 @@ export function SaleDetailsModal({
   shop_email?: string;
   receipt_header?: string;
   receipt_footer?: string;
+  logo_width?: number;
+  logo_height?: number;
+  logo_align?: 'left' | 'center' | 'right';
+  receipt_font?: string;
+  autoPrint?: boolean;
 }) {
   const { data, isLoading, error } = useQuery<[Sale, SaleItem[]]>({
     queryKey: ['sale-details', saleId],
     queryFn: () => cmd('get_sale_with_items', { id: saleId })
   });
+
+  React.useEffect(() => {
+    if (data && autoPrint) {
+      const timer = setTimeout(() => {
+        window.print();
+        onClose();
+      }, 500); // give it a moment to render images/fonts
+      return () => clearTimeout(timer);
+    }
+  }, [data, autoPrint, onClose]);
 
   if (isLoading) {
     return (
@@ -323,6 +345,121 @@ export function SaleDetailsModal({
 
   const [sale, items] = data;
 
+  // If autoPrint is true, we hide the modal UI (it will still render for @media print)
+  if (autoPrint) {
+    return (
+      <div className="print-receipt font-mono text-sm" style={{ opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
+        {/* ── Thermal-style Receipt Body ── */}
+        <div style={{ fontFamily: receipt_font || "'Courier New', Courier, monospace", fontSize: '12px', lineHeight: '1.6', color: '#000', letterSpacing: '0.02em' }}>
+          <div style={{ textAlign: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px dashed #333' }}>
+            {shop_logo && (
+              <img src={shop_logo} alt="Logo" style={{ 
+                width: `${logo_width || 120}px`, 
+                height: `${logo_height || 120}px`, 
+                margin: logo_align === 'center' ? '0 auto 6px' : logo_align === 'right' ? '0 0 6px auto' : '0 auto 6px 0',
+                display: 'block', 
+                objectFit: 'contain' 
+              }} />
+            )}
+            <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{shop_name || 'My Shop'}</div>
+            {shop_address && <div style={{ fontSize: '11px', marginTop: '2px' }}>{shop_address}</div>}
+            {shop_phone && <div style={{ fontSize: '11px' }}>{shop_phone}</div>}
+            {shop_email && <div style={{ fontSize: '11px' }}>{shop_email}</div>}
+          </div>
+
+          {receipt_header && (
+            <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px', padding: '4px 0', borderBottom: '1px dashed #999' }}>
+              {receipt_header.split('\n').map((line, idx) => <div key={idx}>{line}</div>)}
+            </div>
+          )}
+
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sale ID:</span><span style={{ fontWeight: 600 }}>{sale.invoice_number}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Date:</span><span>{format(new Date(sale.sale_date), 'dd MMM yyyy, hh:mm a')}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer:</span><span>{sale.customer_name || 'Walk-in'}</span></div>
+          </div>
+
+          <div style={{ borderTop: '1px dashed #333', borderBottom: '1px dashed #333', padding: '4px 0', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', fontWeight: 'bold' }}>
+              <span style={{ flex: '1 1 40%' }}>Item</span>
+              <span style={{ width: '35px', textAlign: 'center' }}>Qty</span>
+              <span style={{ width: '70px', textAlign: 'right' }}>Rate</span>
+              <span style={{ width: '75px', textAlign: 'right' }}>Total</span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '8px' }}>
+            {items.map(i => (
+              <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
+                <div style={{ display: 'flex' }}>
+                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{i.product_name}</span>
+                  <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
+                  <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currency_symbol)}</span>
+                  <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(i.total_price, currency_symbol)}</span>
+                </div>
+                {i.quantity > 1 && (
+                  <div style={{ fontSize: '10px', color: '#666', paddingLeft: '4px' }}>
+                    @ {formatCurrency(i.unit_price, currency_symbol)} x {i.quantity}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ borderTop: '1px dashed #333', paddingTop: '6px', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>SUBTOTAL:</span><span>{formatCurrency(sale.subtotal, currency_symbol)}</span></div>
+            {sale.discount_amount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>DISCOUNT:</span><span>-{formatCurrency(sale.discount_amount, currency_symbol)}</span></div>
+            )}
+            {sale.tax_amount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TAX:</span><span>{formatCurrency(sale.tax_amount, currency_symbol)}</span></div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '4px 0', margin: '4px 0' }}>
+            <span>TOTAL:</span><span>{formatCurrency(sale.total_amount, currency_symbol)}</span>
+          </div>
+
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>PAID ({sale.payment_method.toUpperCase()}):</span><span>{formatCurrency(sale.paid_amount, currency_symbol)}</span></div>
+            {sale.change_amount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CHANGE:</span><span>{formatCurrency(sale.change_amount, currency_symbol)}</span></div>
+            )}
+            {(sale.total_amount - sale.paid_amount) > 0.01 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c00', fontWeight: 'bold' }}><span>BALANCE DUE:</span><span>{formatCurrency(sale.total_amount - sale.paid_amount, currency_symbol)}</span></div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '3px double #333', marginBottom: '8px' }}></div>
+
+          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px' }}>
+            {shop_address && <div>{shop_address}</div>}
+            {shop_phone && <div>Tel: {shop_phone}</div>}
+            {shop_email && <div>{shop_email}</div>}
+          </div>
+
+          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '10px' }}>
+            {(receipt_footer || 'Thank You!').split('\n').map((line, idx) => (
+              <div key={idx}>{line}</div>
+            ))}
+          </div>
+
+          <div style={{ textAlign: 'center', margin: '8px 0' }}>
+            <Barcode
+              value={sale.invoice_number}
+              width={1.2}
+              height={40}
+              displayValue={true}
+              fontSize={11}
+              margin={0}
+              font="'Courier New', monospace"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="overlay no-print" onClick={onClose} />
@@ -336,12 +473,18 @@ export function SaleDetailsModal({
         </div>
 
         {/* ── Thermal-style Receipt Body ── */}
-        <div style={{ fontFamily: "'Courier New', Courier, monospace", fontSize: '12px', lineHeight: '1.6', color: '#000', letterSpacing: '0.02em' }}>
+        <div style={{ fontFamily: receipt_font || "'Courier New', Courier, monospace", fontSize: '12px', lineHeight: '1.6', color: '#000', letterSpacing: '0.02em' }}>
 
           {/* Shop Header - Centered */}
           <div style={{ textAlign: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px dashed #333' }}>
             {shop_logo && (
-              <img src={shop_logo} alt="Logo" style={{ width: '56px', height: '56px', margin: '0 auto 6px', display: 'block', objectFit: 'contain' }} />
+              <img src={shop_logo} alt="Logo" style={{ 
+                width: `${logo_width || 120}px`, 
+                height: `${logo_height || 120}px`, 
+                margin: logo_align === 'center' ? '0 auto 6px' : logo_align === 'right' ? '0 0 6px auto' : '0 auto 6px 0',
+                display: 'block', 
+                objectFit: 'contain' 
+              }} />
             )}
             <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{shop_name || 'My Shop'}</div>
             {shop_address && <div style={{ fontSize: '11px', marginTop: '2px' }}>{shop_address}</div>}

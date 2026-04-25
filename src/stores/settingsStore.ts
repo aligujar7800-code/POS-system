@@ -19,6 +19,10 @@ interface Settings {
   label_offset_y: number;
   language: string;
   low_stock_threshold: number;
+  logo_width: number;
+  logo_height: number;
+  logo_align: 'left' | 'center' | 'right';
+  receipt_font: string;
 }
 
 interface SettingsState extends Settings {
@@ -47,6 +51,10 @@ export const useSettingsStore = create<SettingsState>()(
       label_offset_y: 0,
       language: 'en',
       low_stock_threshold: 5,
+      logo_width: 120,
+      logo_height: 120,
+      logo_align: 'center' as const,
+      receipt_font: "'Courier New', Courier, monospace",
 
       setSettings: (s) => set((state) => ({ ...state, ...s })),
       setLanguage: (language) => set({ language }),

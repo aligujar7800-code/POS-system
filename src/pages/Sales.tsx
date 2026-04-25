@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Fuse from 'fuse.js';
 import { cmd, formatCurrency } from '../lib/utils';
+import { backgroundCreateOrder, isShopifyConfigured } from '../lib/shopify';
 import { useCartStore } from '../stores/cartStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
@@ -173,7 +174,8 @@ export default function SalesPage() {
   const { 
     currency_symbol, tax_rate, printer_type, printer_port, printer_baud,
     shop_name, shop_address, shop_phone, shop_logo, shop_email,
-    receipt_header, receipt_footer
+    receipt_header, receipt_footer,
+    logo_width, logo_height, logo_align, receipt_font
   } = useSettingsStore();
   const cart = useCartStore();
   const queryClient = useQueryClient();
@@ -188,6 +190,7 @@ export default function SalesPage() {
   const [quickPhone, setQuickPhone] = useState('');
   const [completing, setCompleting] = useState(false);
   const [lastSaleId, setLastSaleId] = useState<number | null>(null);
+  const [autoPrintSaleId, setAutoPrintSaleId] = useState<number | null>(null);
   const [showVariants, setShowVariants] = useState<Product | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -381,7 +384,7 @@ export default function SalesPage() {
         }
       });
 
-      setLastSaleId(id);
+      setAutoPrintSaleId(id);
       toast(`Sale complete! Invoice: ${invoice}`, 'success');
       
       // Instantly refresh other pages in background
@@ -393,6 +396,17 @@ export default function SalesPage() {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['total-udhaar'] });
+
+      // Shopify: Create order in background (non-blocking)
+      isShopifyConfigured().then(configured => {
+        if (configured) {
+          cmd<Record<string, string>>('get_all_settings').then(s => {
+            if (s?.shopify_auto_sync === '1') {
+              backgroundCreateOrder(id);
+            }
+          });
+        }
+      });
       
       // Auto-trigger invoice print
       if (printer_type && printer_type !== 'none') {
@@ -783,6 +797,32 @@ export default function SalesPage() {
           shop_email={shop_email}
           receipt_header={receipt_header}
           receipt_footer={receipt_footer}
+          logo_width={logo_width}
+          logo_height={logo_height}
+          logo_align={logo_align}
+          receipt_font={receipt_font}
+        />
+      )}
+      {autoPrintSaleId && (
+        <SaleDetailsModal
+          saleId={autoPrintSaleId}
+          onClose={() => setAutoPrintSaleId(null)}
+          onReprint={() => {}}
+          onReturn={() => {}}
+          currency_symbol={currency_symbol}
+          printer_type={printer_type}
+          shop_name={shop_name}
+          shop_address={shop_address}
+          shop_phone={shop_phone}
+          shop_logo={shop_logo}
+          shop_email={shop_email}
+          receipt_header={receipt_header}
+          receipt_footer={receipt_footer}
+          logo_width={logo_width}
+          logo_height={logo_height}
+          logo_align={logo_align}
+          receipt_font={receipt_font}
+          autoPrint={true}
         />
       )}
     </div>

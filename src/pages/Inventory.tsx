@@ -7,6 +7,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../components/ui/Toaster';
 import AdminConfirmModal from '../components/ui/AdminConfirmModal';
 import BarcodeModal from '../components/ui/BarcodeModal';
+import BatchBarcodeModal from '../components/ui/BatchBarcodeModal';
 import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw } from 'lucide-react';
 
 interface Product {
@@ -54,6 +55,9 @@ export default function InventoryPage() {
     price: number;
     sku?: string;
   } | null>(null);
+
+  // Batch Printing State
+  const [activeBatchProduct, setActiveBatchProduct] = useState<Product | null>(null);
 
   const { data: variants = [], isLoading: isLoadingVariants, isError, error } = useQuery<ProductVariant[]>({
     queryKey: ['variants', expandedProductId],
@@ -294,48 +298,9 @@ export default function InventoryPage() {
                             <Layers className="w-3 h-3" /> Individual Variants
                           </h4>
                           <button
-                            onClick={async (e) => {
+                            onClick={(e) => {
                               e.stopPropagation();
-                              if (variants.length === 0) return;
-                              const validVariants = variants.filter(v => v.variant_barcode && v.quantity > 0);
-                              if (validVariants.length === 0) {
-                                toast('No variants with barcodes and stock found to print.', 'error');
-                                return;
-                              }
-                              try {
-                                const port = useSettingsStore.getState().label_printer_port || useSettingsStore.getState().printer_port;
-                                const printer_type = (() => {
-                                  if (port.toUpperCase().startsWith('COM')) return 'serial';
-                                  if (port.startsWith('usb:')) return 'usb';
-                                  if (port.includes('.') && port.includes(':')) return 'network';
-                                  return 'system';
-                                })();
-                                const batchItems = validVariants.flatMap(v => 
-                                  Array.from({ length: v.quantity }).map(() => ({
-                                    shop_name: useSettingsStore.getState().shop_name,
-                                    product_name: p.name,
-                                    size: v.size,
-                                    color: v.color,
-                                    price: v.variant_price || p.sale_price,
-                                    barcode: v.variant_barcode || '',
-                                    quantity: 1, // handled by flatMap
-                                    offset_x: useSettingsStore.getState().label_offset_x,
-                                    offset_y: useSettingsStore.getState().label_offset_y
-                                  }))
-                                );
-                                await cmd('print_label_batch', {
-                                  items: batchItems,
-                                  shopName: useSettingsStore.getState().shop_name,
-                                  config: {
-                                    printer_type,
-                                    port,
-                                    baud_rate: useSettingsStore.getState().printer_baud
-                                  }
-                                });
-                                toast('Batch sent to printer!', 'success');
-                              } catch (err: any) {
-                                toast(err.toString(), 'error');
-                              }
+                              setActiveBatchProduct(p);
                             }}
                             className="btn-secondary btn-sm"
                             disabled={isLoadingVariants || variants.length === 0}
@@ -437,6 +402,15 @@ export default function InventoryPage() {
           isOpen={!!activeBarcodeProduct}
           onClose={() => setActiveBarcodeProduct(null)}
           product={activeBarcodeProduct}
+        />
+      )}
+
+      {activeBatchProduct && (
+        <BatchBarcodeModal
+          isOpen={!!activeBatchProduct}
+          onClose={() => setActiveBatchProduct(null)}
+          product={activeBatchProduct}
+          variants={variants}
         />
       )}
     </div>

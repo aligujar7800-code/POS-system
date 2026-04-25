@@ -1,0 +1,12 @@
+{
+    "shop_name": "Ruba",
+    "shop_address": "Faisalabad",
+    "shop_phone": "030098839",
+    "shop_email": "malik@gmail.com",
+    "logo_path": "F:\\Apps\\Store\\shop_logo.png",
+    "barcode_printer": "AnyDesk Printer",
+    "receipt_printer": "AnyDesk Printer",
+    "receipt_header": "",
+    "receipt_footer": "RETURN POLICY\nHello Chaye pilo",
+    "logo_print_mode": "compatibility"
+}

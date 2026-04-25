@@ -15,18 +15,16 @@ if (!GITHUB_TOKEN) {
 }
 const REPO_OWNER = 'aligujar7800-code';
 const REPO_NAME = 'POS-system';
-const TARGET = 'x86_64-pc-windows-msvc'; // Default tauri windows target
 // ---------------------
 
 const version = process.argv[2];
 const password = process.argv[3];
 
 if (!version) {
-  console.error('Error: Please provide a version number (e.g., node publish.js 1.0.1 [password])');
+  console.error('Error: Please provide a version number (e.g., node publish.js 1.0.6 [password])');
   process.exit(1);
 }
 
-// Ensure version has 'v' prefix for tags, but purely semantic for config
 const semver = version.startsWith('v') ? version.substring(1) : version;
 const tag = `v${semver}`;
 
@@ -34,6 +32,7 @@ const rootDir = path.resolve(__dirname, '..');
 const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
 const packageJsonPath = path.join(rootDir, 'package.json');
 
+// [1] Version bump
 console.log(`[1] Bumping version to ${semver}...`);
 const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf8'));
 tauriConf.version = semver;
@@ -43,121 +42,105 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 packageJson.version = semver;
 fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
+// [2] Build
 console.log(`[2] Building Tauri application...`);
-// Set the signing key content directly (Tauri v2 standard)
 const keyPath = path.join(rootDir, 'src-tauri', 'updater_key');
 if (fs.existsSync(keyPath)) {
   process.env.TAURI_SIGNING_PRIVATE_KEY = fs.readFileSync(keyPath, 'utf8').trim();
 }
-if (password) {
-  process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = password;
-} else {
-  process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = '';
-}
+process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = password || '';
 
 try {
-  execSync('npm run tauri build', { cwd: rootDir, stdio: 'inherit' });
+  console.log(`[2.1] Building with updater bundles...`);
+  execSync('npx tauri build --bundles updater,nsis', { cwd: rootDir, stdio: 'inherit' });
 } catch (err) {
-  console.error("Build failed!");
+  console.error('Build failed!');
   process.exit(1);
 }
 
+// [3] Artifacts dhundho (ZIP ya EXE)
 const bundleDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
-const installerName = `ClothingPOS_${semver}_x64-setup.exe`;
-const installerPath = path.join(bundleDir, installerName);
-const sigPath = `${installerPath}.sig`;
 
-// Check for artifacts and try manual signing as fallback
-if (!fs.existsSync(installerPath)) {
-  console.error("Could not find generated installer at:", installerPath);
+let updateArtifactPath = path.join(bundleDir, `ClothingPOS_${semver}_x64-setup.nsis.zip`);
+let updateArtifactName = `ClothingPOS_${semver}_x64-setup.nsis.zip`;
+
+if (!fs.existsSync(updateArtifactPath)) {
+  console.log('⚠️  .nsis.zip nahi mili, .exe use kar raha hoon...');
+  updateArtifactPath = path.join(bundleDir, `ClothingPOS_${semver}_x64-setup.exe`);
+  updateArtifactName = `ClothingPOS_${semver}_x64-setup.exe`;
+}
+
+const sigPath = `${updateArtifactPath}.sig`;
+
+if (!fs.existsSync(updateArtifactPath)) {
+  console.error(`\n❌ Koi bhi installer file nahi mili: ${updateArtifactPath}`);
   process.exit(1);
 }
 
 if (!fs.existsSync(sigPath)) {
-  console.log(`[2.1] Signature file missing. Attempting manual signing...`);
-  try {
-    // Clear the env var so it doesn't conflict with the -f (file path) flag
-    delete process.env.TAURI_SIGNING_PRIVATE_KEY;
-    const signCmd = `npx tauri signer sign -f "${keyPath}" "${installerPath}"`;
-    execSync(signCmd, { cwd: rootDir, stdio: 'inherit', input: '' });
-  } catch (signErr) {
-    console.warn("Manual signing attempt finished. Checking results...");
-  }
-}
-
-if (!fs.existsSync(sigPath)) {
-  console.error("Error: Signature file (.sig) is still missing. The auto-updater will not work without it.");
+  console.error(`\n❌ Signature file nahi mili: ${sigPath}`);
   process.exit(1);
 }
 
-const signature = fs.readFileSync(sigPath, 'utf8');
+const signature = fs.readFileSync(sigPath, 'utf8').trim();
+console.log(`✅ Using Artifact: ${updateArtifactName}`);
+console.log(`✅ Using Signature: ${updateArtifactName}.sig`);
 
 // GitHub API Helper
 function ghApi(method, endpoint, body = null, isUpload = false) {
   return new Promise((resolve, reject) => {
-    let host = isUpload ? 'uploads.github.com' : 'api.github.com';
-    const bodyData = body ? (Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body))) : null;
+    const host = isUpload ? 'uploads.github.com' : 'api.github.com';
+    const bodyData = body
+      ? Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body))
+      : null;
     const headers = {
-      'Authorization': `token ${GITHUB_TOKEN}`,
+      Authorization: `token ${GITHUB_TOKEN}`,
       'User-Agent': 'Tauri-AutoUpdater',
-      'Accept': 'application/vnd.github.v3+json',
+      Accept: 'application/vnd.github.v3+json',
     };
-    if (isUpload) {
-      headers['Content-Type'] = 'application/octet-stream';
-    }
-    if (bodyData) {
-      headers['Content-Length'] = bodyData.length;
-    }
-    const req = https.request({
-      hostname: host,
-      path: endpoint,
-      method,
-      headers,
-    }, (res) => {
-      let data = [];
-      res.on('data', chunk => data.push(chunk));
+    if (isUpload) headers['Content-Type'] = 'application/octet-stream';
+    if (bodyData) headers['Content-Length'] = bodyData.length;
+
+    const req = https.request({ hostname: host, path: endpoint, method, headers }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
       res.on('end', () => {
-        const str = Buffer.concat(data).toString();
+        const str = Buffer.concat(chunks).toString();
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(str ? JSON.parse(str) : null);
         } else {
-          reject(new Error(`GitHub API Error: ${res.statusCode}\n${str}`));
+          reject(new Error(`GitHub API Error ${res.statusCode}:\n${str}`));
         }
       });
     });
-
     req.on('error', reject);
-    if (bodyData) {
-      req.write(bodyData);
-    }
+    if (bodyData) req.write(bodyData);
     req.end();
   });
 }
 
 async function publish() {
   try {
-    console.log(`[3] Creating GitHub Release ${tag}...`);
+    console.log(`\n[3] Creating GitHub Release ${tag}...`);
     const release = await ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/releases`, {
       tag_name: tag,
       name: `Release ${tag}`,
-      body: `Auto-generated release for version ${tag}`,
+      body: `Release notes for version ${tag}`,
       draft: false,
-      prerelease: false
+      prerelease: false,
     });
 
-    const releaseId = release.id;
-    const uploadUrl = release.upload_url.split('{')[0]; // Clean the {?name,label} part
-    const uploadPath = uploadUrl.replace('https://uploads.github.com', '');
+    const uploadPath = release.upload_url.split('{')[0].replace('https://uploads.github.com', '');
 
-    console.log(`[4] Uploading Installer...`);
-    const exeBuffer = fs.readFileSync(installerPath);
-    const uploadedAsset = await ghApi('POST', `${uploadPath}?name=${installerName}`, exeBuffer, true);
-    
-    console.log(`[5] Uploading Signature...`);
-    const sigBuffer = fs.readFileSync(sigPath);
-    await ghApi('POST', `${uploadPath}?name=${installerName}.sig`, sigBuffer, true);
+    // Artifact upload (ZIP ya EXE)
+    console.log(`[4] Uploading update artifact: ${updateArtifactName}...`);
+    const uploadedAsset = await ghApi('POST', `${uploadPath}?name=${updateArtifactName}`, fs.readFileSync(updateArtifactPath), true);
 
-    const assetUrl = uploadedAsset.browser_download_url;
+    // Signature upload
+    console.log(`[5] Uploading signature: ${updateArtifactName}.sig...`);
+    await ghApi('POST', `${uploadPath}?name=${updateArtifactName}.sig`, fs.readFileSync(sigPath), true);
+
+    const downloadUrl = uploadedAsset.browser_download_url;
 
     console.log(`[6] Generating update.json...`);
     const updateJson = {
@@ -165,31 +148,32 @@ async function publish() {
       notes: `Release notes for version ${tag}`,
       pub_date: new Date().toISOString(),
       platforms: {
-        "windows-x86_64": {
+        'windows-x86_64': {
           signature: signature,
-          url: assetUrl
-        }
-      }
+          url: downloadUrl,
+        },
+      },
     };
 
     const updateJsonPath = path.join(rootDir, 'update.json');
     fs.writeFileSync(updateJsonPath, JSON.stringify(updateJson, null, 2));
+    console.log(`update.json saved — URL: ${downloadUrl}`);
 
-    console.log(`[7] Committing to Git...`);
+    console.log(`\n[8] Git commit & push...`);
     try {
       execSync('git add package.json src-tauri/tauri.conf.json update.json', { cwd: rootDir });
       execSync(`git commit -m "chore(release): bump version to ${semver}"`, { cwd: rootDir });
       execSync('git push', { cwd: rootDir });
-      console.log('✅ Changes pushed to main branch.');
-    } catch(gitErr) {
-      console.warn("⚠️  Git operations failed. You might need to manually commit and push update.json");
+      console.log('Pushed to main branch.');
+    } catch (gitErr) {
+      console.warn('Git push fail — manually push karo.');
     }
 
-    console.log(`🎉 Successfully published ${tag}! Your existing desktop clients will now auto-update.`);
+    console.log(`\n🎉 Release ${tag} complete! Auto-update ab sahi kaam karega.`);
   } catch (err) {
-    console.error("Publish failed:", err);
+    console.error('\nPublish failed:', err.message);
     process.exit(1);
   }
 }
 
-publish();
+publish();

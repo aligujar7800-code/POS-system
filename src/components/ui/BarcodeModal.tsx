@@ -26,6 +26,9 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
   const [quantity, setQuantity] = useState(1);
   const [isPrinting, setIsPrinting] = useState(false);
   const [template, setTemplate] = useState<'small' | 'large'>('large');
+  const [showDiscount, setShowDiscount] = useState(false);
+  const [mrpPrice, setMrpPrice] = useState(product.price);
+  const [salePrice, setSalePrice] = useState(product.price);
 
   if (!isOpen) return null;
 
@@ -39,13 +42,14 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
           sku: product.sku || '',
           size: product.size,
           color: product.color,
-          price: product.price,
+          price: showDiscount ? salePrice : product.price,
           barcode: product.barcode,
           quantity: quantity,
           template: 'small',
-          protocol: 'epl',    // EPL2 for Zebra TLP 2844
+          protocol: 'epl',
           offset_x: settings.label_offset_x,
-          offset_y: settings.label_offset_y
+          offset_y: settings.label_offset_y,
+          mrp: showDiscount ? mrpPrice : null
         },
         config: {
           printer_type: (() => {
@@ -109,7 +113,14 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
                   {product.sku && <span className="ml-1 opacity-50">[{product.sku}]</span>}
                 </p>
                 <p className="font-black text-slate-800 text-sm mt-1">
-                  {settings.currency_symbol}{product.price}
+                  {showDiscount ? (
+                    <>
+                      <span className="line-through text-slate-400 text-xs mr-1">M.R.P {settings.currency_symbol}{mrpPrice}</span>
+                      <span className="text-emerald-600">Sale {settings.currency_symbol}{salePrice}</span>
+                    </>
+                  ) : (
+                    <>{settings.currency_symbol}{product.price}</>
+                  )}
                 </p>
               </div>
 
@@ -170,6 +181,50 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Discount Toggle */}
+              <div className="w-full">
+                <button
+                  onClick={() => {
+                    setShowDiscount(!showDiscount);
+                    if (!showDiscount) {
+                      setMrpPrice(product.price);
+                      setSalePrice(product.price);
+                    }
+                  }}
+                  className={`w-full h-10 rounded-xl text-sm font-bold transition-all border flex items-center justify-center gap-2 ${
+                    showDiscount
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  <Tag className="w-4 h-4" />
+                  {showDiscount ? 'Discount Active' : 'Add MRP / Sale Price'}
+                </button>
+
+                {showDiscount && (
+                  <div className="flex gap-3 mt-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">M.R.P (Original)</label>
+                      <input
+                        type="number"
+                        value={mrpPrice}
+                        onChange={(e) => setMrpPrice(parseFloat(e.target.value) || 0)}
+                        className="w-full h-10 text-center text-sm font-bold bg-transparent border border-red-200 rounded-lg focus:border-red-500 focus:ring-1 focus:ring-red-500 focus:outline-none text-red-600"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Sale Price</label>
+                      <input
+                        type="number"
+                        value={salePrice}
+                        onChange={(e) => setSalePrice(parseFloat(e.target.value) || 0)}
+                        className="w-full h-10 text-center text-sm font-bold bg-transparent border border-emerald-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none text-emerald-600"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-4">

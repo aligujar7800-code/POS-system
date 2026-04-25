@@ -1,0 +1,14 @@
+{
+    "x_offset_left": 20,
+    "x_offset_right": 420,
+    "text_y_pos": 5,
+    "barcode_y_pos": 60,
+    "barcode_height": 60,
+    "printer_name": "ZDesigner TLP 2844",
+    "barcode_width": 300,
+    "font_size": 6,
+    "font_size_name": 6,
+    "font_size_sub": 6,
+    "font_size_price": 6,
+    "font_size_code": 17
+}

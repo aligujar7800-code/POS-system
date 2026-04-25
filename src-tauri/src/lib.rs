@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod hardware;
+mod shopify;
 
 use commands::*;
 use parking_lot::Mutex;
@@ -37,6 +38,7 @@ pub fn run() {
             update_user_status,
             change_password,
             verify_admin_password,
+            delete_user,
             // Products
             search_products,
             get_all_products,
@@ -126,6 +128,17 @@ pub fn run() {
             get_financial_summary,
             get_account_balance,
             repair_accounting_data,
+            // Shopify
+            shopify_test_connection,
+            shopify_get_locations,
+            shopify_sync_product,
+            shopify_sync_inventory,
+            shopify_create_order,
+            shopify_get_mappings,
+            shopify_get_queue_stats,
+            shopify_get_pending_syncs,
+            shopify_retry_pending,
+            shopify_clear_done_syncs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

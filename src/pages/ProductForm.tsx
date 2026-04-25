@@ -104,22 +104,28 @@ export default function ProductForm() {
     }
   }, [isEdit, variantsData]);
 
-  const mainCatMap: Record<string, number> = { Men: 100, Women: 200, Kids: 300, Accessories: 0 };
-  const selectedParentId = mainCatMap[mainCategory] || 0;
-
-  const { data: subCategories = [] } = useQuery<Category[]>({
-    queryKey: ['sub-categories', selectedParentId],
-    queryFn: () => cmd('get_sub_categories', { parentId: selectedParentId }),
-    enabled: selectedParentId > 0,
-  });
-
-  // Fallback: get all categories if no main category selected
-  const { data: allCategories = [] } = useQuery<Category[]>({
+  const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: () => cmd('get_all_categories'),
   });
 
-  const filteredSubCategories = selectedParentId > 0 ? subCategories : allCategories;
+  const mainCategories = categories.filter(c => !c.parent_id);
+  const filteredSubCategories = categories.filter(c => 
+    c.parent_id === (mainCategory ? parseInt(mainCategory) : -1)
+  );
+
+  // Auto-detect main category on edit
+  useEffect(() => {
+    if (isEdit && productData && categories.length > 0) {
+      const subCat = categories.find(c => c.id === productData.category_id);
+      if (subCat && subCat.parent_id) {
+        setMainCategory(subCat.parent_id.toString());
+      } else if (productData.category_id) {
+        // If the selected category is itself a main category
+        setMainCategory(productData.category_id.toString());
+      }
+    }
+  }, [isEdit, productData, categories]);
 
   const generateBarcode = async () => {
     try {
@@ -371,16 +377,19 @@ export default function ProductForm() {
               <div>
                 <label className="label text-xs font-bold text-slate-500 uppercase">Main Category</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['Men', 'Women', 'Kids', 'Accessories'].map(m => (
+                  {mainCategories.map(m => (
                     <button
-                      key={m}
+                      key={m.id}
                       type="button"
-                      onClick={() => setMainCategory(m)}
+                      onClick={() => {
+                        setMainCategory(m.id.toString());
+                        setCategoryId(''); // Reset sub-category when main changes
+                      }}
                       className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${
-                        mainCategory === m ? 'bg-brand-600 text-white border-brand-600 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
+                        mainCategory === m.id.toString() ? 'bg-brand-600 text-white border-brand-600 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
                       }`}
                     >
-                      {m}
+                      {m.name}
                     </button>
                   ))}
                 </div>
@@ -388,8 +397,13 @@ export default function ProductForm() {
               
               <div>
                 <label className="label text-xs font-bold text-slate-500 uppercase">Sub-Category</label>
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="input">
-                  <option value="">Select Category</option>
+                <select 
+                  value={categoryId} 
+                  onChange={(e) => setCategoryId(e.target.value)} 
+                  className="input"
+                  disabled={!mainCategory}
+                >
+                  <option value="">{mainCategory ? 'Select Sub-Category...' : 'Choose Main Category First'}</option>
                   {filteredSubCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
