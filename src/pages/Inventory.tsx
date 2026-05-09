@@ -81,6 +81,11 @@ export default function InventoryPage() {
     queryFn: () => cmd('get_all_products'),
   });
 
+  const { data: valuation } = useQuery<{product_count: number, cost_value: number, sale_value: number}>({
+    queryKey: ['inventory_valuation'],
+    queryFn: () => cmd('inventory_valuation'),
+  });
+
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: () => cmd('get_all_categories'),
@@ -178,7 +183,7 @@ export default function InventoryPage() {
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Stock Value</p>
             <p className="text-xl font-black text-emerald-700">
-              {fmt(products.reduce((acc, p) => acc + (p.total_stock * p.cost_price), 0))}
+              {fmt(valuation?.cost_value || 0)}
             </p>
           </div>
         </div>
@@ -229,7 +234,6 @@ export default function InventoryPage() {
               <th>SKU / Barcode</th>
               <th>Category</th>
               <th>Variants & Prices</th>
-              <th className="text-right">Default Price</th>
               <th>Stock</th>
               <th>Actions</th>
             </tr>
@@ -270,10 +274,6 @@ export default function InventoryPage() {
                       {expandedProductId === p.id ? 'Close Details' : 'View Variants'}
                     </div>
                   </td>
-                  <td className="text-right">
-                    <div className="text-xs text-slate-400">Cost: {fmt(p.cost_price)}</div>
-                    <div className="font-semibold text-brand-600">{fmt(p.sale_price)}</div>
-                  </td>
                   <td>{stockBadge(p)}</td>
                   <td>
                     <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
@@ -311,7 +311,7 @@ export default function InventoryPage() {
                 {/* Expanded Variants Row */}
                 {expandedProductId === p.id && (
                   <tr>
-                    <td colSpan={7} className="p-0 bg-slate-50/50">
+                    <td colSpan={6} className="p-0 bg-slate-50/50">
                       <div className="px-6 py-4 border-b border-slate-200">
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">

@@ -53,20 +53,30 @@ pub fn get_machine_fingerprint() -> std::result::Result<String, String> {
     Err("Could not read Machine GUID".to_string())
 }
 
-/// Generate a license key for a given machine ID using HMAC-SHA256
-pub fn generate_key_for_machine(machine_id: &str) -> String {
+pub fn generate_key_for_machine(machine_id: &str, month_offset: i32) -> String {
+    use chrono::Datelike;
+    let date = chrono::Utc::now();
+    let mut year = date.year();
+    let mut month = date.month() as i32 + month_offset;
+    while month > 12 { month -= 12; year += 1; }
+    while month < 1 { month += 12; year -= 1; }
+
+    let month_str = format!("{:02}{:04}", month, year); // e.g., 052026
+    let input = format!("{}{}{}", machine_id, LICENSE_SECRET, month_str);
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(input.as_bytes());
+    let result = hasher.finalize();
+    let hex_str: String = result.iter().map(|b| format!("{:02X}", b)).collect();
+    format!("CPOS-{}-{}-{}-{}", &hex_str[0..4], &hex_str[4..8], &hex_str[8..12], &hex_str[12..16])
+}
+
+pub fn generate_old_key_for_machine(machine_id: &str) -> String {
     let input = format!("{}{}", machine_id, LICENSE_SECRET);
     let mut hasher = sha2::Sha256::new();
     hasher.update(input.as_bytes());
-    let hash = hasher.finalize();
-    let hex: String = hash.iter().map(|b| format!("{:02X}", b)).collect();
-    format!(
-        "CPOS-{}-{}-{}-{}",
-        &hex[0..4],
-        &hex[4..8],
-        &hex[8..12],
-        &hex[12..16]
-    )
+    let result = hasher.finalize();
+    let hex_str: String = result.iter().map(|b| format!("{:02X}", b)).collect();
+    format!("CPOS-{}-{}-{}-{}", &hex_str[0..4], &hex_str[4..8], &hex_str[8..12], &hex_str[12..16])
 }
 
 /// Calculate days remaining from an expiry date string
@@ -80,53 +90,8 @@ fn calc_days_remaining(expiry_str: &str) -> i64 {
 }
 
 /// Check if the machine is approved in the online JSON file.
-/// If found, activate/renew the license for the specified number of days.
-pub async fn check_online_activation(db: tauri::State<'_, crate::commands::DbState>) -> std::result::Result<Option<LicenseInfo>, String> {
-    let machine_id = get_machine_fingerprint()?;
-    
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e: reqwest::Error| e.to_string())?;
-
-    let response = client.get(ONLINE_LICENSES_URL).send().await;
-    
-    if let Ok(resp) = response {
-        if let Ok(entries) = resp.json::<Vec<OnlineLicenseEntry>>().await {
-            if let Some(entry) = entries.iter().find(|e| e.machine_id == machine_id) {
-                // Auto-activate or RENEW!
-                let key = generate_key_for_machine(&machine_id);
-                let expiry = chrono::Utc::now() + chrono::Duration::days(entry.days);
-                let expiry_str = expiry.format("%Y-%m-%d").to_string();
-
-                {
-                    let conn = db.lock();
-                    conn.execute(
-                        "INSERT INTO app_license (id, license_key, machine_id, expiry_date, status)
-                         VALUES (1, ?1, ?2, ?3, 'active')
-                         ON CONFLICT(id) DO UPDATE SET
-                            license_key = excluded.license_key,
-                            machine_id = excluded.machine_id,
-                            activated_at = datetime('now'),
-                            expiry_date = excluded.expiry_date,
-                            status = 'active'",
-                        params![key, machine_id, expiry_str],
-                    ).map_err(|e: rusqlite::Error| e.to_string())?;
-                }
-
-                let days_remaining = calc_days_remaining(&expiry_str);
-
-                return Ok(Some(LicenseInfo {
-                    license_key: key,
-                    machine_id,
-                    activated_at: chrono::Utc::now().to_rfc3339(),
-                    expiry_date: Some(expiry_str),
-                    status: "active".to_string(),
-                    days_remaining: Some(days_remaining),
-                }));
-            }
-        }
-    }
+/// Now only used as a whitelist check. No auto-renewal.
+pub async fn check_online_activation(_db: tauri::State<'_, crate::commands::DbState>) -> std::result::Result<Option<LicenseInfo>, String> {
     Ok(None)
 }
 
@@ -209,39 +174,79 @@ pub fn get_license_status(conn: &Connection) -> Result<Option<LicenseInfo>> {
     }
 }
 
-/// Activate a license key manually — always 30 days
-pub fn activate_license(conn: &Connection, key: &str) -> std::result::Result<LicenseInfo, String> {
+/// Activate a license key manually — checks Github whitelist, validates monthly key, and activates for 30 days.
+pub async fn activate_license(db: tauri::State<'_, crate::commands::DbState>, key: &str) -> std::result::Result<LicenseInfo, String> {
     let machine_id = get_machine_fingerprint()?;
 
-    let expected = generate_key_for_machine(&machine_id);
-    if key.trim().to_uppercase() != expected {
-        return Err("Invalid license key".to_string());
+    // 1. Verify online whitelist
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client.get(ONLINE_LICENSES_URL).send().await.map_err(|_| "Network error checking license. Please connect to internet.".to_string())?;
+    let entries: Vec<OnlineLicenseEntry> = resp.json().await.map_err(|_| "Invalid license server response.".to_string())?;
+
+    if !entries.iter().any(|e| e.machine_id == machine_id) {
+        return Err("This machine is not authorized. Please ask developer to add your ID.".to_string());
     }
 
-    // Set expiry to 30 days from now
+    // 2. Validate Key
+    let upper_key = key.trim().to_uppercase();
+    
+    let expected_current = generate_key_for_machine(&machine_id, 0);
+    let expected_prev = generate_key_for_machine(&machine_id, -1);
+    let expected_next = generate_key_for_machine(&machine_id, 1);
+    let old_expected = generate_old_key_for_machine(&machine_id);
+
+    if upper_key != expected_current && upper_key != expected_prev && upper_key != expected_next && upper_key != old_expected {
+        return Err("Invalid license key.".to_string());
+    }
+
+    // 3. Prevent reuse
+    {
+        let conn = db.lock();
+        let current_db_key: Option<String> = conn.query_row(
+            "SELECT license_key FROM app_license WHERE id = 1 AND status = 'active'",
+            [],
+            |row| row.get(0)
+        ).ok();
+
+        if let Some(db_key) = current_db_key {
+            if db_key == upper_key {
+                return Err("This license key has already been used.".to_string());
+            }
+        }
+    }
+
+    // 4. Activate
     let expiry = chrono::Utc::now() + chrono::Duration::days(DEFAULT_LICENSE_DAYS);
     let expiry_str = expiry.format("%Y-%m-%d").to_string();
 
-    conn.execute(
-        "INSERT INTO app_license (id, license_key, machine_id, expiry_date, status)
-         VALUES (1, ?1, ?2, ?3, 'active')
-         ON CONFLICT(id) DO UPDATE SET
-            license_key = excluded.license_key,
-            machine_id = excluded.machine_id,
-            activated_at = datetime('now'),
-            expiry_date = excluded.expiry_date,
-            status = 'active'",
-        params![key.trim().to_uppercase(), machine_id, expiry_str],
-    )
-    .map_err(|e| format!("DB error: {}", e))?;
+    {
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO app_license (id, license_key, machine_id, expiry_date, status)
+             VALUES (1, ?1, ?2, ?3, 'active')
+             ON CONFLICT(id) DO UPDATE SET
+                license_key = excluded.license_key,
+                machine_id = excluded.machine_id,
+                activated_at = datetime('now'),
+                expiry_date = excluded.expiry_date,
+                status = 'active'",
+            params![upper_key, machine_id, expiry_str],
+        ).map_err(|e: rusqlite::Error| e.to_string())?;
+    }
+
+    let days_remaining = calc_days_remaining(&expiry_str);
 
     Ok(LicenseInfo {
-        license_key: key.to_string(),
+        license_key: upper_key,
         machine_id,
         activated_at: chrono::Utc::now().to_rfc3339(),
-        expiry_date: Some(expiry_str.clone()),
+        expiry_date: Some(expiry_str),
         status: "active".to_string(),
-        days_remaining: Some(DEFAULT_LICENSE_DAYS),
+        days_remaining: Some(days_remaining),
     })
 }
 

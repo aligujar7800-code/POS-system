@@ -13,7 +13,8 @@ interface VariantEntry {
   color: string;
   quantity: number;
   barcode: string;
-  price: string;
+  cost_price: string;
+  sale_price: string;
 }
 interface SizeGroup {
   id: string;
@@ -21,7 +22,7 @@ interface SizeGroup {
   colors: VariantEntry[];
 }
 
-const emptyColor = (): VariantEntry => ({ color: '', quantity: 0, barcode: '', price: '' });
+const emptyColor = (): VariantEntry => ({ color: '', quantity: 0, barcode: '', cost_price: '', sale_price: '' });
 const emptySizeGroup = (): SizeGroup => ({ id: Math.random().toString(36).substring(7), size: '', colors: [emptyColor()] });
 
 export default function ProductForm() {
@@ -39,9 +40,7 @@ export default function ProductForm() {
   const [mainCategory, setMainCategory] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [brand, setBrand]       = useState('');
-  const [description, setDesc]  = useState('');
-  const [costPrice, setCostPrice] = useState('');
-  const [salePrice, setSalePrice] = useState('');
+  const [desc, setDesc]  = useState('');
   const [taxPct, setTaxPct]     = useState('0');
   const [lowStock, setLowStock] = useState('5');
   const [sizeGroups, setSizeGroups] = useState<SizeGroup[]>([emptySizeGroup()]);
@@ -70,8 +69,6 @@ export default function ProductForm() {
       setCategoryId(productData.category_id?.toString() || '');
       setBrand(productData.brand || '');
       setDesc(productData.description || '');
-      setCostPrice(productData.cost_price?.toString() || '');
-      setSalePrice(productData.sale_price?.toString() || '');
       setTaxPct(productData.tax_percent?.toString() || '0');
       setLowStock(productData.low_stock_threshold?.toString() || '5');
     }
@@ -98,7 +95,8 @@ export default function ProductForm() {
           color: v.color || '',
           quantity: v.quantity,
           barcode: v.variant_barcode || '',
-          price: v.variant_price?.toString() || ''
+          cost_price: '', // backend doesn't return variant cost price, but we leave it empty for edits unless updated
+          sale_price: v.variant_price?.toString() || ''
         });
       });
       setSizeGroups(Object.values(groups));
@@ -166,16 +164,15 @@ export default function ProductForm() {
 
   const handleSave = async () => {
     if (!name.trim()) { toast('Product Name is required', 'error'); return; }
-    if (!salePrice && !isEdit) { toast('Default Sale Price is required', 'error'); return; }
     setSaving(true);
     try {
       const payload = {
         name, sku, barcode: barcode || null,
         article_number: articleNumber || null,
         category_id: categoryId ? parseInt(categoryId) : null,
-        brand: brand || null, description: description || null,
-        cost_price: parseFloat(costPrice) || 0,
-        sale_price: parseFloat(salePrice) || 0,
+        brand: brand || null, description: desc || null,
+        cost_price: sizeGroups[0]?.colors[0]?.cost_price ? parseFloat(sizeGroups[0].colors[0].cost_price) : 0,
+        sale_price: sizeGroups[0]?.colors[0]?.sale_price ? parseFloat(sizeGroups[0].colors[0].sale_price) : 0,
         tax_percent: parseFloat(taxPct) || 0,
         low_stock_threshold: parseInt(lowStock) || 5,
       };
@@ -190,7 +187,8 @@ export default function ProductForm() {
               color: c.color || null,
               quantity: isEdit ? (parseInt(String(c.quantity)) || 0) : 0,
               variant_barcode: c.barcode || null,
-              variant_price: c.price ? parseFloat(c.price) : null,
+              variant_price: c.sale_price ? parseFloat(c.sale_price) : null,
+              cost_price: c.cost_price ? parseFloat(c.cost_price) : 0, // Pass cost price if backend supports it in future
             });
           }
         });
@@ -288,7 +286,7 @@ export default function ProductForm() {
 
               <div>
                 <label className="label text-xs font-bold text-slate-500 uppercase">Description</label>
-                <textarea value={description} onChange={(e) => setDesc(e.target.value)} className="input h-20 resize-none" placeholder="Add material, fit, or style notes..." />
+                <textarea value={desc} onChange={(e) => setDesc(e.target.value)} className="input h-20 resize-none" placeholder="Add material, fit, or style notes..." />
               </div>
             </div>
           </div>
@@ -331,29 +329,33 @@ export default function ProductForm() {
                   </div>
                   
                   <div className="p-4 space-y-3">
-                    <div className="grid grid-cols-12 gap-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter px-1">
-                      <div className="col-span-4">Color</div>
-                      <div className="col-span-2 text-center">Quantity</div>
-                      <div className="col-span-3">Barcode</div>
-                      <div className="col-span-2 text-right">PRICE</div>
-                      <div className="col-span-1" />
+                    <div className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter px-1">
+                      <div>Color</div>
+                      <div className="text-center">Qty</div>
+                      <div>Barcode</div>
+                      <div className="text-right">Cost</div>
+                      <div className="text-right">Price</div>
+                      <div />
                     </div>
                     
                     {group.colors.map((c, idx) => (
-                      <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-4">
+                      <div key={idx} className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-2 items-center">
+                        <div>
                           <input value={c.color} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'color', e.target.value)} className={cn("input-sm", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="Black, Navy..." />
                         </div>
-                        <div className="col-span-2" title="Stock cannot be edited manually. Use Inward or Stock Adjustment to change quantities.">
+                        <div title="Stock cannot be edited manually. Use Inward or Stock Adjustment to change quantities.">
                           <input type="number" value={isEdit ? c.quantity : 0} readOnly disabled className={cn("input-sm text-center font-bold bg-slate-50 cursor-not-allowed", !isEdit && "text-slate-400")} min={0} />
                         </div>
-                        <div className="col-span-3">
+                        <div>
                           <input value={c.barcode} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'barcode', e.target.value)} className={cn("input-sm text-xs", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="Scan..." />
                         </div>
-                        <div className="col-span-2">
-                          <input type="number" value={c.price} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'price', e.target.value)} className={cn("input-sm text-right", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="0" />
+                        <div>
+                          <input type="number" value={c.cost_price} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'cost_price', e.target.value)} className={cn("input-sm text-right", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="0" />
                         </div>
-                        <div className="col-span-1 flex justify-center">
+                        <div>
+                          <input type="number" value={c.sale_price} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'sale_price', e.target.value)} className={cn("input-sm text-right font-bold text-brand-600", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="0" />
+                        </div>
+                        <div className="flex justify-center">
                           {group.colors.length > 1 && !isEdit && (
                             <button onClick={() => removeColorFromGroup(group.id, idx)} className="text-slate-300 hover:text-red-400">
                               <Trash2 className="w-3.5 h-3.5" />
@@ -434,18 +436,10 @@ export default function ProductForm() {
             </div>
           </div>
 
-          {/* Default Pricing */}
+          {/* Additional Settings */}
           <div className="card p-6">
-            <h3 className="font-bold text-slate-800 mb-4">Pricing & Stock Alerts</h3>
+            <h3 className="font-bold text-slate-800 mb-4">Stock Alerts & Tax</h3>
             <div className="space-y-4">
-              <div>
-                <label className="label text-xs font-bold text-slate-500 uppercase font-mono">Default Cost Price</label>
-                <input type="number" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} className="input font-bold text-amber-600" />
-              </div>
-              <div>
-                <label className="label text-xs font-bold text-slate-500 uppercase font-mono">Default Sale Price *</label>
-                <input type="number" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} className="input font-black text-brand-600 text-xl" />
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label text-xs font-bold text-slate-500 uppercase">Tax %</label>

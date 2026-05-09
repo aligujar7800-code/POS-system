@@ -1,17 +1,19 @@
 import sys
 import hashlib
-from datetime import datetime, timedelta
+import datetime
 
 # MUST MATCH THE RUST BACKEND SECRET EXACTLY
-LICENSE_SECRET = b"FashionPointPOS_2026_SecretKey_XkZ9mQ"
+LICENSE_SECRET = "FashionPointPOS_2026_SecretKey_XkZ9mQ"
 
 # License validity period in days
 LICENSE_DAYS = 30
 
 def generate_key(machine_id: str) -> str:
-    # Hash machine_id + secret
-    input_data = machine_id.encode('utf-8') + LICENSE_SECRET
-    hash_obj = hashlib.sha256(input_data)
+    # Format: MMYYYY (e.g., 052026)
+    month_str = datetime.datetime.now().strftime("%m%Y")
+    # Hash machine_id + secret + month_str
+    input_data = machine_id + LICENSE_SECRET + month_str
+    hash_obj = hashlib.sha256(input_data.encode('utf-8'))
     hex_digest = hash_obj.hexdigest().upper()
     
     # Format as CPOS-XXXX-XXXX-XXXX-XXXX
@@ -22,13 +24,13 @@ import subprocess
 def copy_to_clipboard(text):
     try:
         subprocess.run("clip", text=True, input=text.strip(), check=True)
-        print("📋 Key copied to clipboard automatically!")
+        print("Key copied to clipboard automatically!")
     except Exception as e:
         print(f"Could not copy to clipboard automatically: {e}")
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔑 Fashion Point POS - License Generator (30-Day License)")
+    print("Fashion Point POS - License Generator (30-Day License)")
     print("=" * 60)
     
     if len(sys.argv) > 1:
@@ -42,15 +44,11 @@ if __name__ == "__main__":
 
     key = generate_key(machine_id)
     
-    activation_date = datetime.now()
-    expiry_date = activation_date + timedelta(days=LICENSE_DAYS)
     
     print("\n[✔] SUCCESS")
     print(f"Machine ID    : {machine_id}")
     print(f"License Key   : {key}")
-    print(f"Valid For      : {LICENSE_DAYS} days")
-    print(f"Activation     : {activation_date.strftime('%Y-%m-%d')}")
-    print(f"Expires On     : {expiry_date.strftime('%Y-%m-%d')}")
+    print(f"Valid For     : {LICENSE_DAYS} days")
     print()
     
     copy_to_clipboard(key)

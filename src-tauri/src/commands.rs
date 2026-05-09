@@ -23,9 +23,8 @@ pub fn get_license_status(db: State<'_, DbState>) -> Result<Option<license::Lice
 }
 
 #[tauri::command]
-pub fn activate_license(db: State<DbState>, key: String) -> Result<license::LicenseInfo, String> {
-    let conn = db.lock();
-    license::activate_license(&conn, &key)
+pub async fn activate_license(db: State<'_, DbState>, key: String) -> Result<license::LicenseInfo, String> {
+    license::activate_license(db, &key).await
 }
 
 #[tauri::command]
