@@ -64,9 +64,13 @@ export default function SettingsPage() {
   // Shopify settings state
   const [shopifyDomain, setShopifyDomain] = useState('');
   const [shopifyToken, setShopifyToken] = useState('');
+  const [shopifyClientId, setShopifyClientId] = useState('');
+  const [shopifySecret, setShopifySecret] = useState('');
   const [showToken, setShowToken] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
   const [shopifyLocationId, setShopifyLocationId] = useState('');
   const [shopifyAutoSync, setShopifyAutoSync] = useState(false);
+  const [shopifyAutoSyncProducts, setShopifyAutoSyncProducts] = useState(false);
   const [shopifyTestResult, setShopifyTestResult] = useState<any>(null);
   const [shopifyTesting, setShopifyTesting] = useState(false);
   const [shopifyLocations, setShopifyLocations] = useState<any[]>([]);
@@ -108,8 +112,11 @@ export default function SettingsPage() {
         if (s) {
           setShopifyDomain(s.shopify_domain || '');
           setShopifyToken(s.shopify_token || '');
+          setShopifyClientId(s.shopify_client_id || '');
+          setShopifySecret(s.shopify_client_secret || '');
           setShopifyLocationId(s.shopify_location_id || '');
           setShopifyAutoSync(s.shopify_auto_sync === '1');
+          setShopifyAutoSyncProducts(s.shopify_auto_sync_products === '1');
         }
         // Load queue stats
         const stats = await cmd('shopify_get_queue_stats');
@@ -964,9 +971,9 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="label">Access Token (Custom App)</label>
+                    <label className="label">Admin API Access Token</label>
                     <p className="text-[11px] text-slate-400 mb-1">
-                      Generate from Shopify Admin → Settings → Apps → Develop apps
+                      For legacy Custom Apps (starts with shpat_). Leave blank if using Dev Dashboard.
                     </p>
                     <div className="relative">
                       <input
@@ -986,6 +993,44 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  <div className="relative flex items-center py-2">
+                    <div className="flex-grow border-t border-slate-200"></div>
+                    <span className="flex-shrink-0 mx-4 text-xs font-medium text-slate-400 uppercase tracking-wider">OR (Dev Dashboard)</span>
+                    <div className="flex-grow border-t border-slate-200"></div>
+                  </div>
+
+                  <div>
+                    <label className="label">Client ID</label>
+                    <p className="text-[11px] text-slate-400 mb-1">From Shopify Dev Dashboard (Partners)</p>
+                    <input
+                      value={shopifyClientId}
+                      onChange={(e) => setShopifyClientId(e.target.value)}
+                      className="input"
+                      placeholder="e.g. 221236935fc603525b19ce7c78911359"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Client Secret</label>
+                    <p className="text-[11px] text-slate-400 mb-1">From Shopify Dev Dashboard (Starts with shpss_)</p>
+                    <div className="relative">
+                      <input
+                        type={showSecret ? 'text' : 'password'}
+                        value={shopifySecret}
+                        onChange={(e) => setShopifySecret(e.target.value)}
+                        className="input pr-10"
+                        placeholder="shpss_xxxxxxxxxxxxxxxxxxxxx"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret(!showSecret)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                      >
+                        {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="flex gap-3">
                     <button
                       onClick={async () => {
@@ -995,8 +1040,11 @@ export default function SettingsPage() {
                             map: {
                               shopify_domain: shopifyDomain,
                               shopify_token: shopifyToken,
+                              shopify_client_id: shopifyClientId,
+                              shopify_client_secret: shopifySecret,
                               shopify_location_id: shopifyLocationId,
                               shopify_auto_sync: shopifyAutoSync ? '1' : '0',
+                              shopify_auto_sync_products: shopifyAutoSyncProducts ? '1' : '0',
                             }
                           });
                           toast('Shopify settings saved!', 'success');
@@ -1020,7 +1068,12 @@ export default function SettingsPage() {
                         try {
                           // Save first
                           await cmd('set_many_settings', {
-                            map: { shopify_domain: shopifyDomain, shopify_token: shopifyToken }
+                            map: { 
+                              shopify_domain: shopifyDomain, 
+                              shopify_token: shopifyToken,
+                              shopify_client_id: shopifyClientId,
+                              shopify_client_secret: shopifySecret
+                            }
                           });
                           const result = await cmd('shopify_test_connection');
                           setShopifyTestResult({ success: true, data: result });
@@ -1040,7 +1093,7 @@ export default function SettingsPage() {
                           setShopifyTesting(false);
                         }
                       }}
-                      disabled={shopifyTesting || !shopifyDomain || !shopifyToken}
+                      disabled={shopifyTesting || !shopifyDomain || (!shopifyToken && (!shopifyClientId || !shopifySecret))}
                       className="btn-secondary"
                     >
                       {shopifyTesting ? (
@@ -1112,20 +1165,38 @@ export default function SettingsPage() {
                 )}
 
                 {/* Auto-sync Toggle */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">Auto-sync on sale & inventory</p>
-                    <p className="text-[11px] text-slate-400">Automatically push changes to Shopify in the background</p>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Auto-sync on sale & inventory</p>
+                      <p className="text-[11px] text-slate-400">Automatically push changes to Shopify in the background</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={shopifyAutoSync}
+                        onChange={(e) => setShopifyAutoSync(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </label>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={shopifyAutoSync}
-                      onChange={(e) => setShopifyAutoSync(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
-                  </label>
+
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Auto-sync products</p>
+                      <p className="text-[11px] text-slate-400">Automatically create/update products on Shopify when saved</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={shopifyAutoSyncProducts}
+                        onChange={(e) => setShopifyAutoSyncProducts(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </label>
+                  </div>
                 </div>
               </div>
 

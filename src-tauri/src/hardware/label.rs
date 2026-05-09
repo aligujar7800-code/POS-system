@@ -22,41 +22,52 @@ pub struct LabelData {
 
 pub fn build_zpl_label(data: &LabelData) -> String {
     let (w, h) = if data.template == "small" { (304, 204) } else { (464, 304) };
-    let size_line = data.size.as_deref().unwrap_or("");
-    let color_line = data.color.as_deref().unwrap_or("");
-    let variant = if !size_line.is_empty() || !color_line.is_empty() {
-        format!("{} {}", size_line, color_line).trim().to_string()
-    } else {
-        String::new()
-    };
+    let size_str = data.size.as_deref().unwrap_or("");
+    let color_str = data.color.as_deref().unwrap_or("");
+    let sku_str = if data.sku.is_empty() { String::new() } else { format!("ART-{}", data.sku) };
 
-    // Price line: if MRP provided, show MRP struck-through + sale price
+    // Row 1: Product Name (left) + Size (right)
+    let mut name_section = format!("^FO10,10^A0N,24,24^FD{}^FS\n", data.product_name);
+    if !size_str.is_empty() {
+        name_section.push_str(&format!("^FO{},10^A0N,24,24^FD{}^FS\n", w - 60, size_str));
+    }
+
+    // Row 2: ART-SKU (left) + Color (right)
+    let mut sku_section = String::new();
+    if !sku_str.is_empty() {
+        sku_section.push_str(&format!("^FO10,40^A0N,18,18^FD{}^FS\n", sku_str));
+    }
+    if !color_str.is_empty() {
+        sku_section.push_str(&format!("^FO{},40^A0N,18,18^FD{}^FS\n", w - 80, color_str));
+    }
+
+    // Row 3: Price
     let price_section = if let Some(mrp) = data.mrp {
         format!(
-            "^FO10,88^A0N,16,16^FDM.R.P Rs. {:.0}^FS\n\
-             ^FO10,86^GB180,1,2^FS\n\
-             ^FO10,106^A0N,22,22^FDSale Rs. {:.0}^FS\n",
-            mrp, data.price
+            "^FO10,65^A0N,28,28^FDMRP: {:.0}^FS\n\
+             ^FO10,73^GB150,1,2^FS\n\
+             ^FO{},65^A0N,28,28^FDSALE: {:.0}^FS\n",
+            mrp, w / 2 + 10, data.price
         )
     } else {
-        format!("^FO10,90^A0N,22,22^FDRs. {:.0}^FS\n", data.price)
+        format!("^FO10,65^A0N,28,28^FDRs. {:.0}^FS\n", data.price)
     };
-    let barcode_y = if data.mrp.is_some() { 130 } else { 120 };
+
+    // Row 4: Barcode
+    let barcode_y = 100;
 
     format!(
         "^XA\n\
          ^PW{w}\n\
          ^LL{h}\n\
-         ^FO10,15^A0N,18,18^FD{shop}^FS\n\
-         ^FO10,40^A0N,24,24^FD{name}^FS\n\
-         ^FO10,68^A0N,18,18^FD{variant}^FS\n\
+         {name_section}\
+         {sku_section}\
          {price_section}\
          ^FO10,{barcode_y}^BCN,60,Y,N,N^FD{barcode}^FS\n\
          ^PQ{qty}\n\
          ^XZ\n",
-        shop = data.shop_name,
-        name = data.product_name,
-        variant = variant,
+        name_section = name_section,
+        sku_section = sku_section,
         price_section = price_section,
         barcode = data.barcode,
         barcode_y = barcode_y,
@@ -113,10 +124,16 @@ pub fn build_tspl_label(data: &LabelData) -> String {
 
 /// EPL2 label format — used by Zebra TLP 2844 and other older Eltron/Zebra printers
 /// Supports 2-across label layout (2 labels per row on 4" printhead)
+/// Layout matches professional clothing tag:
+///   Line 1: Product Name (left) + Size (right)
+///   Line 2: ART-SKU (left) + Color (right)
+///   Line 3: MRP: X,XXX (strikethrough) + SALE: X,XXX (bold)  OR  Rs. X,XXX
+///   Line 4: Barcode (centered)
+///   Line 5: Barcode number (below barcode)
 pub fn build_epl2_label(data: &LabelData) -> String {
-    let size_line = data.size.as_deref().unwrap_or("");
-    let color_line = data.color.as_deref().unwrap_or("");
-    let variant = format!("{} {}", size_line, color_line).trim().to_string();
+    let size_str = data.size.as_deref().unwrap_or("");
+    let color_str = data.color.as_deref().unwrap_or("");
+    let sku_str = if data.sku.is_empty() { String::new() } else { format!("ART-{}", data.sku) };
 
     let mut cmds = String::new();
     
@@ -126,55 +143,66 @@ pub fn build_epl2_label(data: &LabelData) -> String {
     let off_x = data.offset_x.unwrap_or(0);
     let off_y = data.offset_y.unwrap_or(0);
 
-    let lx = 10 + off_x;
-    let rx = 420 + off_x;
-    let y0 = 5 + off_y;
-    let y1 = 25 + off_y;
-    let y2 = 48 + off_y;
-    let y3 = 65 + off_y;
-    let y4 = 90 + off_y;
+    let lx = 10 + off_x;    // left label X origin
+    let rx = 420 + off_x;   // right label X origin
+    let label_w: i32 = 380;      // usable width per label
+
+    // Y positions for each row
+    let name_y = 8 + off_y;     // Row 1: Product name + Size
+    let sku_y = 32 + off_y;     // Row 2: ART-SKU + Color
+    let price_y = 55 + off_y;   // Row 3: MRP/Sale or Price
+    let barcode_y = 85 + off_y; // Row 4: Barcode
+
+    let build_one_label = |x: i32| -> String {
+        let mut s = String::new();
+
+        // Row 1: Product Name (left, bold) + Size (right)
+        s.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", x, name_y, data.product_name));
+        if !size_str.is_empty() {
+            let size_x = x + label_w - (size_str.len() as i32 * 8);
+            s.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", size_x.max(x + 200), name_y, size_str));
+        }
+
+        // Row 2: ART-SKU (left) + Color (right)
+        if !sku_str.is_empty() {
+            s.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", x, sku_y, sku_str));
+        }
+        if !color_str.is_empty() {
+            let color_x = x + label_w - (color_str.len() as i32 * 8);
+            s.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", color_x.max(x + 200), sku_y, color_str));
+        }
+
+        // Row 3: Price
+        if let Some(mrp) = data.mrp {
+            let mrp_text = format!("MRP: {:.0}", mrp);
+            s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", x, price_y, mrp_text));
+            let mrp_width = mrp_text.len() as i32 * 10;
+            s.push_str(&format!("LO{},{},{},2\n", x, price_y + 8, mrp_width));
+            let sale_text = format!("SALE: {:.0}", data.price);
+            let sale_x = x + label_w / 2 + 10;
+            s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", sale_x, price_y, sale_text));
+        } else {
+            s.push_str(&format!("A{},{},0,3,1,1,N,\"Rs. {:.0}\"\n", x, price_y, data.price));
+        }
+
+        // Row 4: Barcode (Code 128, with human readable text below)
+        s.push_str(&format!("B{},{},0,1,2,2,50,B,\"{}\"\n", x, barcode_y, data.barcode));
+
+        s
+    };
 
     let build_content = |include_right: bool| -> String {
         let mut s = String::new();
         s.push_str("\nN\n");
-        s.push_str("q812\n");       // Full width for 2-across on 4" printhead
-        s.push_str("Q200,24\n");    // Label height, gap
+        s.push_str("q812\n");
+        s.push_str("Q200,24\n");
         s.push_str("D8\n");
         s.push_str("S2\n");
 
-        // Helper: build price lines for one label column
-        let build_price = |x: i32| -> String {
-            let mut p = String::new();
-            if let Some(mrp) = data.mrp {
-                // MRP with strikethrough line
-                p.push_str(&format!("A{},{},0,1,1,1,N,\"M.R.P Rs. {:.0}\"\n", x, y3, mrp));
-                p.push_str(&format!("LO{},{},160,1\n", x, y3 + 5)); // strikethrough
-                p.push_str(&format!("A{},{},0,2,1,1,N,\"Sale Rs. {:.0}\"\n", x, y3 + 15, data.price));
-            } else {
-                p.push_str(&format!("A{},{},0,2,1,1,N,\"Rs. {:.0}\"\n", x, y3, data.price));
-            }
-            p
-        };
-        let barcode_y = if data.mrp.is_some() { y4 + 12 } else { y4 };
-
-        // ---- LEFT LABEL ----
-        s.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", lx, y0, data.shop_name));
-        s.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", lx, y1, data.product_name));
-        if !variant.is_empty() {
-            s.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", lx, y2, variant));
-        }
-        s.push_str(&build_price(lx));
-        s.push_str(&format!("B{},{},0,1,2,2,45,B,\"{}\"\n", lx, barcode_y, data.barcode));
+        s.push_str(&build_one_label(lx));
 
         if include_right {
-            // ---- RIGHT LABEL ----
-            s.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", rx, y0, data.shop_name));
-            s.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", rx, y1, data.product_name));
-            if !variant.is_empty() {
-                s.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", rx, y2, variant));
-            }
-            s.push_str(&build_price(rx));
-            s.push_str(&format!("B{},{},0,1,2,2,45,B,\"{}\"\n", rx, barcode_y, data.barcode));
+            s.push_str(&build_one_label(rx));
         }
         s
     };
@@ -197,6 +225,7 @@ pub fn build_epl2_label(data: &LabelData) -> String {
 pub struct LabelBatchItem {
     pub shop_name: String,
     pub product_name: String,
+    pub sku: String,
     pub size: Option<String>,
     pub color: Option<String>,
     pub price: f64,
@@ -210,11 +239,10 @@ pub struct LabelBatchItem {
 /// Build EPL2 commands for a batch of labels (2-across layout)
 /// Pairs items left-right across the printhead
 /// Each item's `quantity` field determines how many copies to print
-pub fn build_epl2_batch(items: &[LabelBatchItem], shop_name: &str) -> String {
+pub fn build_epl2_batch(items: &[LabelBatchItem], _shop_name: &str) -> String {
     let mut cmds = String::new();
 
     // 1. Expand items by their quantity
-    //    e.g. item with quantity=10 becomes 10 individual label entries
     let expanded: Vec<&LabelBatchItem> = items.iter()
         .flat_map(|item| std::iter::repeat(item).take(item.quantity as usize))
         .collect();
@@ -233,7 +261,54 @@ pub fn build_epl2_batch(items: &[LabelBatchItem], shop_name: &str) -> String {
         i += 2;
     }
 
-    // 3. Group consecutive identical pairs to compress the payload (prevents TLP2844 buffer overflow)
+    // Helper: build one label at position x
+    let build_one_batch_label = |x: i32, item: &LabelBatchItem, off_y: i32| -> String {
+        let mut s = String::new();
+        let label_w: i32 = 380;
+        let size_str = item.size.as_deref().unwrap_or("");
+        let color_str = item.color.as_deref().unwrap_or("");
+
+        let name_y = 8 + off_y;
+        let sku_y = 32 + off_y;
+        let price_y = 55 + off_y;
+        let barcode_y = 85 + off_y;
+
+        // Row 1: Product Name (left, bold) + Size (right)
+        s.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", x, name_y, item.product_name));
+        if !size_str.is_empty() {
+            let size_x = x + label_w - (size_str.len() as i32 * 8);
+            s.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", size_x.max(x + 200), name_y, size_str));
+        }
+
+        // Row 2: ART + Color
+        if !item.sku.is_empty() {
+            s.push_str(&format!("A{},{},0,1,1,1,N,\"ART-{}\"\n", x, sku_y, item.sku));
+        }
+        if !color_str.is_empty() {
+            let color_x = x + label_w - (color_str.len() as i32 * 8);
+            s.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", color_x.max(x + 200), sku_y, color_str));
+        }
+
+        // Row 3: Price
+        if let Some(mrp) = item.mrp {
+            let mrp_text = format!("MRP: {:.0}", mrp);
+            s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", x, price_y, mrp_text));
+            let mrp_width = mrp_text.len() as i32 * 10;
+            s.push_str(&format!("LO{},{},{},2\n", x, price_y + 8, mrp_width));
+            let sale_text = format!("SALE: {:.0}", item.price);
+            let sale_x = x + label_w / 2 + 10;
+            s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", sale_x, price_y, sale_text));
+        } else {
+            s.push_str(&format!("A{},{},0,3,1,1,N,\"Rs. {:.0}\"\n", x, price_y, item.price));
+        }
+
+        // Row 4: Barcode
+        s.push_str(&format!("B{},{},0,1,2,2,50,B,\"{}\"\n", x, barcode_y, item.barcode));
+
+        s
+    };
+
+    // 3. Group consecutive identical pairs to compress the payload
     let mut i = 0;
     while i < pairs.len() {
         let current_pair = pairs[i];
@@ -260,70 +335,25 @@ pub fn build_epl2_batch(items: &[LabelBatchItem], shop_name: &str) -> String {
         let left = current_pair.0;
         let right = current_pair.1;
 
-        let left_variant = format!(
-            "{} {}",
-            left.size.as_deref().unwrap_or(""),
-            left.color.as_deref().unwrap_or("")
-        ).trim().to_string();
         let off_x = left.offset_x.unwrap_or(0);
         let off_y = left.offset_y.unwrap_or(0);
         let lx = 10 + off_x;
         let rx = 420 + off_x;
-        let y0 = 5 + off_y;
-        let y1 = 25 + off_y;
-        let y2 = 48 + off_y;
-        let y3 = 65 + off_y;
-        let y4 = 90 + off_y;
 
-        // For each unique pair, build a single print job spanning full width
         cmds.push_str("\nN\n");
-        cmds.push_str("q812\n");       // Full printhead width for 2-across
-        cmds.push_str("Q200,24\n");    // Label height, gap
+        cmds.push_str("q812\n");
+        cmds.push_str("Q200,24\n");
         cmds.push_str("D8\n");
         cmds.push_str("S2\n");
 
-        // Helper: build price lines for one label column
-        let build_price_batch = |x: i32, item: &LabelBatchItem| -> String {
-            let mut p = String::new();
-            if let Some(mrp) = item.mrp {
-                p.push_str(&format!("A{},{},0,1,1,1,N,\"M.R.P Rs. {:.0}\"\n", x, y3, mrp));
-                p.push_str(&format!("LO{},{},160,1\n", x, y3 + 5));
-                p.push_str(&format!("A{},{},0,2,1,1,N,\"Sale Rs. {:.0}\"\n", x, y3 + 15, item.price));
-            } else {
-                p.push_str(&format!("A{},{},0,2,1,1,N,\"Rs. {:.0}\"\n", x, y3, item.price));
-            }
-            p
-        };
-        let has_mrp = left.mrp.is_some() || right.map_or(false, |r| r.mrp.is_some());
-        let barcode_y = if has_mrp { y4 + 12 } else { y4 };
+        // Left label
+        cmds.push_str(&build_one_batch_label(lx, left, off_y));
 
-        // ---- LEFT LABEL ----
-        cmds.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", lx, y0, shop_name));
-        cmds.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", lx, y1, left.product_name));
-        if !left_variant.is_empty() {
-            cmds.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", lx, y2, left_variant));
-        }
-        cmds.push_str(&build_price_batch(lx, left));
-        cmds.push_str(&format!("B{},{},0,1,2,2,45,B,\"{}\"\n", lx, barcode_y, left.barcode));
-
-        // ---- RIGHT LABEL ----
+        // Right label
         if let Some(r) = right {
-            let right_variant = format!(
-                "{} {}",
-                r.size.as_deref().unwrap_or(""),
-                r.color.as_deref().unwrap_or("")
-            ).trim().to_string();
-
-            cmds.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", rx, y0, shop_name));
-            cmds.push_str(&format!("A{},{},0,2,1,1,N,\"{}\"\n", rx, y1, r.product_name));
-            if !right_variant.is_empty() {
-                cmds.push_str(&format!("A{},{},0,1,1,1,N,\"{}\"\n", rx, y2, right_variant));
-            }
-            cmds.push_str(&build_price_batch(rx, r));
-            cmds.push_str(&format!("B{},{},0,1,2,2,45,B,\"{}\"\n", rx, barcode_y, r.barcode));
+            cmds.push_str(&build_one_batch_label(rx, r, off_y));
         }
 
-        // Print exactly 'count' copies of this paired layout
         cmds.push_str(&format!("P{}\n", count));
 
         i += count;

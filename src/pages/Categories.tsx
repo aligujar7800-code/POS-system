@@ -22,6 +22,7 @@ const MAIN_CAT_COLORS: Record<string, { bg: string; border: string; text: string
   Men: { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af', accent: '#3b82f6' },
   Women: { bg: '#fdf2f8', border: '#fbcfe8', text: '#9d174d', accent: '#ec4899' },
   Kids: { bg: '#f0fdf4', border: '#bbf7d0', text: '#166534', accent: '#22c55e' },
+  Default: { bg: '#f8fafc', border: '#e2e8f0', text: '#475569', accent: '#6366f1' },
 };
 
 export default function CategoriesPage() {
@@ -33,6 +34,8 @@ export default function CategoriesPage() {
   const [newSubName, setNewSubName] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
+  const [isAddingMain, setIsAddingMain] = useState(false);
+  const [newMainName, setNewMainName] = useState('');
 
   // Fetch main categories (Men, Women, Kids)
   const { data: mainCategories = [], isLoading: mainLoading } = useQuery<Category[]>({
@@ -83,6 +86,21 @@ export default function CategoriesPage() {
       setEditingId(null);
       setEditName('');
       qc.invalidateQueries({ queryKey: ['sub-categories'] });
+      qc.invalidateQueries({ queryKey: ['main-categories'] });
+      qc.invalidateQueries({ queryKey: ['categories'] });
+    } catch (err: any) {
+      toast(err.toString(), 'error');
+    }
+  };
+
+  const handleAddMain = async () => {
+    if (!newMainName.trim()) return;
+    try {
+      await cmd('create_category', { name: newMainName.trim(), parentId: null });
+      toast('Category created!', 'success');
+      setNewMainName('');
+      setIsAddingMain(false);
+      qc.invalidateQueries({ queryKey: ['main-categories'] });
       qc.invalidateQueries({ queryKey: ['categories'] });
     } catch (err: any) {
       toast(err.toString(), 'error');
@@ -92,16 +110,64 @@ export default function CategoriesPage() {
   return (
     <div style={{ padding: 24, height: '100%', overflow: 'auto', background: '#f8fafc' }}>
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+      <div style={{ marginBottom: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
             <Layers style={{ width: 22, height: 22 }} />
           </div>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: 0 }}>Product Categories</h1>
-            <p style={{ fontSize: 14, color: '#64748b', margin: 0 }}>Manage Men, Women & Kids categories and their sub-categories</p>
+            <p style={{ fontSize: 14, color: '#64748b', margin: 0 }}>Manage main categories and their sub-categories</p>
           </div>
         </div>
+
+        {!isAddingMain ? (
+          <button 
+            onClick={() => setIsAddingMain(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 20px',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+              transition: 'transform 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <Plus style={{ width: 18, height: 18 }} /> Add New Category
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, background: '#fff', padding: 8, borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+            <input 
+              autoFocus
+              value={newMainName}
+              onChange={(e) => setNewMainName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddMain()}
+              placeholder="Enter category name..."
+              style={{
+                padding: '8px 12px',
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
+                fontSize: 14,
+                outline: 'none',
+                width: 200
+              }}
+            />
+            <button onClick={handleAddMain} style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>
+              Add
+            </button>
+            <button onClick={() => { setIsAddingMain(false); setNewMainName(''); }} style={{ background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: 8, padding: '8px 12px', cursor: 'pointer' }}>
+              <X style={{ width: 18, height: 18 }} />
+            </button>
+          </div>
+        )}
       </div>
 
       {mainLoading ? (
@@ -110,7 +176,7 @@ export default function CategoriesPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 800 }}>
           {mainCategories.map((main) => {
             const isExpanded = expandedId === main.id;
-            const colors = MAIN_CAT_COLORS[main.name] || MAIN_CAT_COLORS.Men;
+            const colors = MAIN_CAT_COLORS[main.name] || MAIN_CAT_COLORS.Default;
             const icon = MAIN_CAT_ICONS[main.name] || <FolderOpen style={{ width: 22, height: 22 }} />;
 
             return (

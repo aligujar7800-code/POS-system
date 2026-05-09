@@ -1,8 +1,12 @@
 import sys
 import hashlib
+from datetime import datetime, timedelta
 
 # MUST MATCH THE RUST BACKEND SECRET EXACTLY
 LICENSE_SECRET = b"FashionPointPOS_2026_SecretKey_XkZ9mQ"
+
+# License validity period in days
+LICENSE_DAYS = 30
 
 def generate_key(machine_id: str) -> str:
     # Hash machine_id + secret
@@ -23,9 +27,9 @@ def copy_to_clipboard(text):
         print(f"Could not copy to clipboard automatically: {e}")
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("🔑 Fashion Point POS - License Generator")
-    print("=" * 50)
+    print("=" * 60)
+    print("🔑 Fashion Point POS - License Generator (30-Day License)")
+    print("=" * 60)
     
     if len(sys.argv) > 1:
         machine_id = sys.argv[1].strip()
@@ -37,12 +41,30 @@ if __name__ == "__main__":
         sys.exit(1)
 
     key = generate_key(machine_id)
+    
+    activation_date = datetime.now()
+    expiry_date = activation_date + timedelta(days=LICENSE_DAYS)
+    
     print("\n[✔] SUCCESS")
-    print(f"Machine ID  : {machine_id}")
-    print(f"License Key : {key}\n")
+    print(f"Machine ID    : {machine_id}")
+    print(f"License Key   : {key}")
+    print(f"Valid For      : {LICENSE_DAYS} days")
+    print(f"Activation     : {activation_date.strftime('%Y-%m-%d')}")
+    print(f"Expires On     : {expiry_date.strftime('%Y-%m-%d')}")
+    print()
     
     copy_to_clipboard(key)
     
-    print("Share this key with the customer.")
-    print("=" * 50)
+    print("-" * 60)
+    print("⚠️  IMPORTANT: This license is valid for 30 DAYS only!")
+    print("    After 30 days, the customer must request renewal.")
+    print("-" * 60)
+    print()
+    print("📝 Add this entry to licenses.json on GitHub:")
+    print(f'   {{"machine_id": "{machine_id}", "days": {LICENSE_DAYS}}}')
+    print()
+    print("🔄 To RENEW an expired license:")
+    print("   1. Update the entry in licenses.json (keep same machine_id)")
+    print("   2. Customer opens the app → it will auto-renew for 30 more days")
+    print("=" * 60)
     input("\nPress Enter to exit...")

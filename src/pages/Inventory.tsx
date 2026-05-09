@@ -8,7 +8,8 @@ import { useToast } from '../components/ui/Toaster';
 import AdminConfirmModal from '../components/ui/AdminConfirmModal';
 import BarcodeModal from '../components/ui/BarcodeModal';
 import BatchBarcodeModal from '../components/ui/BatchBarcodeModal';
-import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw } from 'lucide-react';
+import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw, ShoppingBag } from 'lucide-react';
+import { syncProductToShopify } from '../lib/shopify';
 
 interface Product {
   id: number; name: string; sku: string; barcode?: string;
@@ -58,6 +59,7 @@ export default function InventoryPage() {
 
   // Batch Printing State
   const [activeBatchProduct, setActiveBatchProduct] = useState<Product | null>(null);
+  const [syncingProductId, setSyncingProductId] = useState<number | null>(null);
 
   const { data: variants = [], isLoading: isLoadingVariants, isError, error } = useQuery<ProductVariant[]>({
     queryKey: ['variants', expandedProductId],
@@ -275,6 +277,24 @@ export default function InventoryPage() {
                   <td>{stockBadge(p)}</td>
                   <td>
                     <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={async () => {
+                          setSyncingProductId(p.id);
+                          try {
+                            await syncProductToShopify(p.id);
+                            toast('Synced to Shopify!', 'success');
+                          } catch (e: any) {
+                            toast(e.toString(), 'error');
+                          } finally {
+                            setSyncingProductId(null);
+                          }
+                        }}
+                        disabled={syncingProductId === p.id}
+                        className={`btn-ghost btn-sm ${syncingProductId === p.id ? 'animate-pulse text-brand-600' : 'text-slate-400 hover:text-brand-600'}`}
+                        title="Sync to Shopify"
+                      >
+                        <ShoppingBag className={`w-4 h-4 ${syncingProductId === p.id ? 'animate-spin' : ''}`} />
+                      </button>
                       <Link to={`/inventory/edit/${p.id}`} className="btn-secondary btn-sm">
                         Edit
                       </Link>

@@ -34,6 +34,29 @@ pub struct SaleItem {
     pub total_price: f64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SalesReturn {
+    pub id: i64,
+    pub return_number: String,
+    pub sale_id: i64,
+    pub return_date: String,
+    pub total_refund: f64,
+    pub refund_method: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SalesReturnItem {
+    pub id: i64,
+    pub return_id: i64,
+    pub sale_item_id: i64,
+    pub product_name: String,
+    pub quantity: i64,
+    pub unit_price: f64,
+    pub total_refund: f64,
+    pub is_damaged: bool,
+}
+
 #[derive(Deserialize)]
 pub struct CreateSalePayload {
     pub customer_id: Option<i64>,
@@ -352,8 +375,9 @@ pub fn search_sales(conn: &Connection, query: Option<&str>, from: Option<&str>, 
 
     if let Some(q) = query {
         if !q.trim().is_empty() {
-            sql.push_str(" AND (s.invoice_number LIKE ? OR c.name LIKE ?) ");
+            sql.push_str(" AND (s.invoice_number LIKE ? OR c.name LIKE ? OR c.phone LIKE ?) ");
             let pattern = format!("%{}%", q);
+            bind_params.push(pattern.clone().into());
             bind_params.push(pattern.clone().into());
             bind_params.push(pattern.into());
         }
@@ -460,4 +484,43 @@ fn map_sale_item(row: &rusqlite::Row) -> rusqlite::Result<SaleItem> {
         discount: row.get(8)?,
         total_price: row.get(9)?,
     })
+}
+
+pub fn get_return_with_items(conn: &Connection, return_id: i64) -> Result<(SalesReturn, Vec<SalesReturnItem>)> {
+    let ret = conn.query_row(
+        "SELECT id, return_number, sale_id, return_date, total_refund, refund_method, reason
+         FROM sales_returns WHERE id = ?1",
+        params![return_id],
+        |row| Ok(SalesReturn {
+            id: row.get(0)?,
+            return_number: row.get(1)?,
+            sale_id: row.get(2)?,
+            return_date: row.get(3)?,
+            total_refund: row.get(4)?,
+            refund_method: row.get(5)?,
+            reason: row.get(6)?,
+        }),
+    )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT ri.id, ri.return_id, ri.sale_item_id, si.product_name,
+                ri.quantity, ri.unit_price, ri.total_refund, ri.is_damaged
+         FROM sales_return_items ri
+         JOIN sale_items si ON si.id = ri.sale_item_id
+         WHERE ri.return_id = ?1",
+    )?;
+    let items: Result<Vec<SalesReturnItem>> = stmt
+        .query_map(params![return_id], |row| Ok(SalesReturnItem {
+            id: row.get(0)?,
+            return_id: row.get(1)?,
+            sale_item_id: row.get(2)?,
+            product_name: row.get(3)?,
+            quantity: row.get(4)?,
+            unit_price: row.get(5)?,
+            total_refund: row.get(6)?,
+            is_damaged: row.get::<_, i64>(7)? > 0,
+        }))?
+        .collect();
+
+    Ok((ret, items?))
 }

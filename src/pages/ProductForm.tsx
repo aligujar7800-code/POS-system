@@ -6,6 +6,7 @@ import { cmd, cn } from '../lib/utils';
 import { useToast } from '../components/ui/Toaster';
 import { ArrowLeft, Plus, Trash2, RefreshCw, Package } from 'lucide-react';
 import Barcode from 'react-barcode';
+import { backgroundSyncProduct, isShopifyConfigured } from '../lib/shopify';
 
 interface Category { id: number; name: string; parent_id?: number | null; }
 interface VariantEntry {
@@ -195,11 +196,24 @@ export default function ProductForm() {
         });
       });
 
+      let savedId = isEdit ? parseInt(id!) : 0;
       if (isEdit) {
-        await cmd('update_product', { id: parseInt(id!), payload });
+        await cmd('update_product', { id: savedId, payload });
       } else {
-        await cmd('create_product', { payload, variants: variantPayloads });
+        const res = await cmd<any>('create_product', { payload, variants: variantPayloads });
+        savedId = typeof res === 'number' ? res : res?.id || 0;
       }
+
+      // Shopify: Auto-sync product if enabled
+      isShopifyConfigured().then(configured => {
+        if (configured) {
+          cmd<Record<string, string>>('get_all_settings').then(s => {
+            if (s?.shopify_auto_sync_products === '1' && savedId) {
+              backgroundSyncProduct(savedId);
+            }
+          });
+        }
+      });
 
       toast(`Product ${isEdit ? 'updated' : 'created'}!`, 'success');
       qc.invalidateQueries({ queryKey: ['products'] });

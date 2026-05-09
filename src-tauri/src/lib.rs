@@ -68,6 +68,7 @@ pub fn run() {
             // Sales
             create_sale,
             get_sale_with_items,
+            get_return_with_items,
             get_sales_by_date,
             get_todays_summary,
             search_sales,

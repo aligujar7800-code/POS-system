@@ -173,8 +173,8 @@ pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
     buf.push(b'\n');
 
     // ── Items ───────────────────────────────────────────────────────────────
-    for item in &data.items {
-        let name = clean_str(&item.name);
+    for (idx, item) in data.items.iter().enumerate() {
+        let name = format!("{}. {}", idx + 1, clean_str(&item.name));
         let qty_str = format!("{}", item.qty);
         let rate_str = format!("Rs.{:.2}", item.unit_price);
         let price_str = format!("Rs.{:.2}", item.total);

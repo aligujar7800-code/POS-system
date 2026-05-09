@@ -5,9 +5,11 @@ import { cmd, formatCurrency } from '../lib/utils';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../components/ui/Toaster';
 import { format } from 'date-fns';
-import { Search, Printer, Eye, X, Receipt as ReceiptIcon, ArrowRightLeft, AlertTriangle } from 'lucide-react';
+import { Search, Printer, Eye, X, Receipt as ReceiptIcon, ArrowRightLeft, AlertTriangle, Barcode as BarcodeIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import Barcode from 'react-barcode';
+import { useBarcode } from '../hooks/useBarcode';
+import { useAuthStore } from '../stores/authStore';
 
 interface Sale {
   id: number;
@@ -66,6 +68,12 @@ export default function ReceiptsPage() {
   const filteredSales = statusFilter
     ? sales.filter(s => s.status === statusFilter)
     : sales;
+
+  useBarcode(async (barcode) => {
+    if (!selectedSale && !returningSale) {
+      setQuery(barcode);
+    }
+  });
 
   const handleReprint = async (saleId: number) => {
     if (!printer_type || printer_type === 'none') {
@@ -389,10 +397,10 @@ export function SaleDetailsModal({
           </div>
 
           <div style={{ marginBottom: '8px' }}>
-            {items.map(i => (
+            {items.map((i, index) => (
               <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
                 <div style={{ display: 'flex' }}>
-                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{i.product_name}</span>
+                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{index + 1}. {i.product_name}</span>
                   <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
                   <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currency_symbol)}</span>
                   <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(i.total_price, currency_symbol)}</span>
@@ -520,10 +528,10 @@ export function SaleDetailsModal({
 
           {/* Items */}
           <div style={{ marginBottom: '8px' }}>
-            {items.map(i => (
+            {items.map((i, index) => (
               <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
                 <div style={{ display: 'flex' }}>
-                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{i.product_name}</span>
+                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{index + 1}. {i.product_name}</span>
                   <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
                   <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currency_symbol)}</span>
                   <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(i.total_price, currency_symbol)}</span>
@@ -635,6 +643,9 @@ export function SaleDetailsModal({
 function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number; onClose: () => void; currencySymbol: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const { printer_type, printer_port, printer_baud, shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer, logo_width, logo_height, logo_align, receipt_font } = useSettingsStore();
+
   const { data, isLoading } = useQuery<[Sale, SaleItem[]]>({
     queryKey: ['sale-details', saleId],
     queryFn: () => cmd('get_sale_with_items', { id: saleId })
@@ -642,9 +653,53 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
 
   const [returnQtys, setReturnQtys] = useState<Record<number, number>>({});
   const [damagedMap, setDamagedMap] = useState<Record<number, boolean>>({});
-  const [refundMethod, setRefundMethod] = useState<'cash' | 'adjustment'>('cash');
   const [reason, setReason] = useState('');
+  
+  // Exchange state
+  const [exchangeItems, setExchangeItems] = useState<any[]>([]);
+  const [netPaymentMethod, setNetPaymentMethod] = useState<'cash' | 'card' | 'udhaar' | 'adjustment'>('cash');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Success state to show receipt
+  const [exchangeReceipt, setExchangeReceipt] = useState<{ returnId: number, saleId: number | null } | null>(null);
+
+  useBarcode(async (barcode) => {
+    if (exchangeReceipt) return; // Don't scan if showing receipt
+    try {
+      const product = await cmd<any>('get_product_by_barcode', { barcode });
+      if (product) {
+        const variants = await cmd<any[]>('get_product_variants', { productId: product.id });
+        let variant = variants.find(v => v.variant_barcode === barcode);
+        if (!variant && variants.length > 0) variant = variants[0];
+        
+        const nameStr = variant && (variant.size || variant.color) 
+          ? `${product.name} (${[variant.size, variant.color].filter(Boolean).join(' / ')})`
+          : product.name;
+
+        setExchangeItems(prev => {
+          const existing = prev.find(i => i.barcode === (variant?.variant_barcode || product.barcode));
+          if (existing) {
+            return prev.map(i => i.barcode === existing.barcode ? { ...i, quantity: i.quantity + 1, total_price: (i.quantity + 1) * i.unit_price } : i);
+          }
+          return [...prev, {
+            product_id: product.id,
+            variant_id: variant?.id,
+            product_name: nameStr,
+            barcode: variant?.variant_barcode || product.barcode,
+            quantity: 1,
+            unit_price: variant?.variant_price ?? product.sale_price,
+            discount: 0,
+            total_price: variant?.variant_price ?? product.sale_price,
+          }];
+        });
+        toast(`Added exchange item: ${nameStr}`, 'success');
+      } else {
+        toast(`Barcode not found: ${barcode}`, 'error');
+      }
+    } catch (e) {
+      toast('Barcode lookup failed', 'error');
+    }
+  });
 
   if (isLoading || !data) return null;
   const [sale, items] = data;
@@ -654,10 +709,17 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
     setReturnQtys(prev => ({ ...prev, [itemId]: val }));
   };
 
+  const removeExchangeItem = (index: number) => {
+    setExchangeItems(prev => prev.filter((_, i) => i !== index));
+  };
+
   const totalRefund = items.reduce((sum, item) => {
     const qty = returnQtys[item.id] || 0;
     return sum + (qty * item.unit_price);
   }, 0);
+
+  const totalExchange = exchangeItems.reduce((sum, item) => sum + item.total_price, 0);
+  const netAmount = totalExchange - totalRefund; // positive = customer owes us, negative = we owe customer
 
   const handleSubmit = async () => {
     const payloads = items
@@ -668,23 +730,54 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
         is_damaged: !!damagedMap[i.id],
       }));
 
-    if (payloads.length === 0) {
-      toast("Select at least one item to return", "error");
+    if (payloads.length === 0 && exchangeItems.length === 0) {
+      toast("Select items to return or exchange", "error");
       return;
     }
 
     try {
       setIsSubmitting(true);
-      await cmd('process_sales_return', {
-        payload: {
-          sale_id: saleId,
-          items: payloads,
-          refund_method: refundMethod,
-          reason: reason || null,
-          created_by: null,
-        }
-      });
-      toast("Return processed successfully", "success");
+      let returnIdRes = null;
+      
+      // Process Return if any items selected
+      if (payloads.length > 0) {
+        const refundMethodStr = netAmount > 0 ? netPaymentMethod : (netPaymentMethod === 'adjustment' ? 'adjustment' : 'cash');
+        const [retId] = await cmd<[number, string]>('process_sales_return', {
+          payload: {
+            sale_id: saleId,
+            items: payloads,
+            refund_method: refundMethodStr,
+            reason: reason || null,
+            created_by: user?.id || null,
+          }
+        });
+        returnIdRes = retId;
+      }
+
+      let newSaleIdRes = null;
+      // Process Exchange Sale if any items added
+      if (exchangeItems.length > 0) {
+        const [sId] = await cmd<[number, string]>('create_sale', {
+          payload: {
+            customer_id: sale.customer_id,
+            items: exchangeItems,
+            subtotal: totalExchange,
+            discount_amount: 0,
+            discount_percent: 0,
+            tax_amount: 0,
+            total_amount: totalExchange,
+            paid_amount: netAmount > 0 ? (netPaymentMethod === 'udhaar' ? 0 : totalExchange) : totalExchange,
+            change_amount: netAmount < 0 ? Math.abs(netAmount) : 0,
+            payment_method: netAmount > 0 ? netPaymentMethod : 'cash',
+            status: netAmount > 0 && netPaymentMethod === 'udhaar' ? 'udhaar' : 'paid',
+            notes: `Exchange for sale #${sale.invoice_number}`,
+            created_by: user?.id || null,
+          }
+        });
+        newSaleIdRes = sId;
+      }
+
+      toast("Exchange processed successfully", "success");
       queryClient.invalidateQueries({ queryKey: ['sales-history'] });
       queryClient.invalidateQueries({ queryKey: ['sales'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -692,112 +785,354 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
       queryClient.invalidateQueries({ queryKey: ['financial-ledger'] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['total-udhaar'] });
-      onClose();
+      
+      if (returnIdRes || newSaleIdRes) {
+        setExchangeReceipt({ returnId: returnIdRes as any, saleId: newSaleIdRes });
+      } else {
+        onClose();
+      }
+      
     } catch (e: any) {
       toast(e.toString(), "error");
-    } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  if (exchangeReceipt) {
+    return (
+      <ExchangeReceiptModal 
+        returnId={exchangeReceipt.returnId}
+        saleId={exchangeReceipt.saleId}
+        onClose={onClose}
+        currencySymbol={currencySymbol}
+        printerConfig={{ printer_type, printer_port, printer_baud }}
+        shopInfo={{ shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer, logo_width, logo_height, logo_align, receipt_font }}
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="dialog w-[900px] flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-slate-800">Return & Exchange: {sale.invoice_number}</h2>
+          <button onClick={onClose} className="btn-icon"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="flex gap-4 flex-1 min-h-0">
+          {/* Left: Return Items */}
+          <div className="flex-1 flex flex-col border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 p-3 font-semibold border-b border-slate-200 text-slate-700">Items to Return</div>
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 sticky top-0">
+                  <tr className="border-b border-slate-200 text-slate-600">
+                    <th className="p-2 font-semibold text-left">Item Name</th>
+                    <th className="p-2 font-semibold text-center w-16">Return Qty</th>
+                    <th className="p-2 font-semibold text-center w-16">Damaged?</th>
+                    <th className="p-2 font-semibold text-right">Refund</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(item => (
+                    <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                      <td className="p-2">
+                        <div className="font-medium text-slate-800 truncate" title={item.product_name}>{item.product_name}</div>
+                        <div className="text-xs text-slate-500">{formatCurrency(item.unit_price, currencySymbol)} (Sold: {item.quantity})</div>
+                      </td>
+                      <td className="p-2">
+                        <input type="number" className="input py-1 text-center w-full" value={returnQtys[item.id] || ''} onChange={(e) => handleQtyChange(item.id, parseInt(e.target.value) || 0, item.quantity)} placeholder="0" />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input type="checkbox" className="w-4 h-4 rounded text-rose-600" checked={!!damagedMap[item.id]} onChange={(e) => setDamagedMap(prev => ({ ...prev, [item.id]: e.target.checked }))} />
+                      </td>
+                      <td className="p-2 text-right font-bold text-slate-700">
+                        {formatCurrency((returnQtys[item.id] || 0) * item.unit_price, currencySymbol)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Right: Exchange Items */}
+          <div className="flex-1 flex flex-col border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-brand-50 p-3 font-semibold border-b border-brand-100 text-brand-700 flex justify-between items-center">
+              <span>New Items (Exchange)</span>
+              <span className="text-xs font-normal opacity-70 flex items-center gap-1"><BarcodeIcon className="w-3 h-3" /> Scan barcode to add</span>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-white">
+               {exchangeItems.length === 0 ? (
+                 <div className="flex flex-col items-center justify-center h-full text-slate-400 p-6 text-center">
+                   <p className="text-sm">No new items added.</p>
+                   <p className="text-xs mt-1">Scan a barcode to add items for exchange.</p>
+                 </div>
+               ) : (
+                 <div className="divide-y divide-slate-50">
+                   {exchangeItems.map((item, idx) => (
+                     <div key={idx} className="p-2 flex items-center justify-between hover:bg-slate-50">
+                       <div className="flex-1 min-w-0 pr-2">
+                         <div className="font-medium text-sm text-slate-800 truncate">{item.product_name}</div>
+                         <div className="text-xs text-slate-500">{formatCurrency(item.unit_price, currencySymbol)}</div>
+                       </div>
+                       <div className="flex items-center gap-3">
+                         <input type="number" className="input-sm w-16 text-center" value={item.quantity} onChange={(e) => {
+                           const q = parseInt(e.target.value) || 1;
+                           setExchangeItems(prev => prev.map((vi, i) => i === idx ? { ...vi, quantity: q, total_price: q * vi.unit_price } : vi));
+                         }} />
+                         <div className="font-bold text-sm w-16 text-right">{formatCurrency(item.total_price, currencySymbol)}</div>
+                         <button onClick={() => removeExchangeItem(idx)} className="text-slate-400 hover:text-red-500"><X className="w-4 h-4"/></button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+          <div>
+            <div className="text-sm text-slate-500 mb-1">Total Refund</div>
+            <div className="text-xl font-bold text-rose-600">{formatCurrency(totalRefund, currencySymbol)}</div>
+          </div>
+          <div>
+            <div className="text-sm text-slate-500 mb-1">Total New Sale</div>
+            <div className="text-xl font-bold text-brand-600">{formatCurrency(totalExchange, currencySymbol)}</div>
+          </div>
+          <div className="border-l border-slate-200 pl-4">
+            <div className="text-sm text-slate-500 mb-1">{netAmount > 0 ? "Customer Owes" : "Refund to Customer"}</div>
+            <div className={`text-2xl font-black ${netAmount > 0 ? 'text-brand-600' : 'text-emerald-600'}`}>
+              {formatCurrency(Math.abs(netAmount), currencySymbol)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Payment / Refund Method</label>
+            <select className="input w-full" value={netPaymentMethod} onChange={(e) => setNetPaymentMethod(e.target.value as any)}>
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              {sale.customer_id && <option value="adjustment">Udhaar / Adjustment</option>}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Return Reason (Optional)</label>
+            <input type="text" className="input w-full" placeholder="e.g., Size issue..." value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button onClick={onClose} className="btn-secondary flex-1" disabled={isSubmitting}>Cancel</button>
+          <button
+            onClick={handleSubmit}
+            className="btn-primary flex-1 bg-brand-600 hover:bg-brand-700"
+            disabled={isSubmitting || (totalRefund === 0 && totalExchange === 0)}
+          >
+            {isSubmitting ? "Processing..." : `Confirm Return & Exchange`}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ExchangeReceiptModal({ returnId, saleId, onClose, currencySymbol, printerConfig, shopInfo }: any) {
+  const { toast } = useToast();
+  
+  const returnQuery = useQuery<any>({
+    queryKey: ['return-details', returnId],
+    queryFn: () => returnId ? cmd('get_return_with_items', { id: returnId }) : Promise.resolve(null),
+    enabled: !!returnId
+  });
+
+  const saleQuery = useQuery<any>({
+    queryKey: ['sale-details', saleId],
+    queryFn: () => saleId ? cmd('get_sale_with_items', { id: saleId }) : Promise.resolve(null),
+    enabled: !!saleId
+  });
+
+  const isLoading = (returnId && returnQuery.isLoading) || (saleId && saleQuery.isLoading);
+
+  if (isLoading) {
+    return <div className="overlay"><div className="dialog text-center p-8">Loading receipt...</div></div>;
+  }
+
+  const [ret, retItems] = returnQuery.data || [null, []];
+  const [sale, saleItems] = saleQuery.data || [null, []];
+
+  const totalRefund = ret?.total_refund || 0;
+  const totalSale = sale?.total_amount || 0;
+  const netAmount = totalSale - totalRefund;
+
+  const handlePrint = async () => {
+    if (printerConfig.printer_type && printerConfig.printer_type !== 'none') {
+      try {
+        const receiptItems = [
+          ...(retItems || []).map((i: any) => ({
+            name: `(RET) ${i.product_name}`,
+            qty: i.quantity,
+            unit_price: i.unit_price,
+            total: -(i.total_refund)
+          })),
+          ...(saleItems || []).map((i: any) => ({
+            name: i.product_name,
+            qty: i.quantity,
+            unit_price: i.unit_price,
+            total: i.total_price
+          }))
+        ];
+
+        const receiptData = {
+          shop_name: shopInfo.shop_name || 'My Shop',
+          shop_address: shopInfo.shop_address || '',
+          shop_phone: shopInfo.shop_phone || '',
+          shop_email: shopInfo.shop_email || '',
+          header: "EXCHANGE RECEIPT",
+          invoice_number: sale?.invoice_number || ret?.return_number || 'EXCHANGE',
+          sale_date: new Date().toISOString(),
+          customer_name: null,
+          cashier: "Cashier",
+          items: receiptItems,
+          subtotal: netAmount,
+          discount: 0,
+          tax: 0,
+          total: netAmount,
+          paid: Math.max(0, netAmount),
+          change: Math.max(0, -netAmount),
+          payment_method: sale?.payment_method || ret?.refund_method || 'CASH',
+          footer: shopInfo.receipt_footer || 'Thank You!'
+        };
+
+        await cmd('print_receipt', {
+          data: receiptData,
+          config: {
+            printer_type: printerConfig.printer_type,
+            port: printerConfig.printer_port,
+            baud_rate: printerConfig.printer_baud,
+          }
+        });
+        toast("Thermal receipt sent to printer", "success");
+        onClose();
+      } catch (e: any) {
+        toast("Thermal Print Failed: " + e.toString(), "error");
+        window.print();
+        onClose();
+      }
+    } else {
+      window.print();
+      onClose();
     }
   };
 
   return (
     <>
-      <div className="overlay" onClick={onClose} />
-      <div className="dialog w-[600px] flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-slate-800">Return Items: {sale.invoice_number}</h2>
-          <button onClick={onClose} className="btn-icon"><X className="w-5 h-5" /></button>
-        </div>
-
-        <div className="p-4 bg-amber-50 rounded-lg border border-amber-100 mb-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-700">
-            Selected items will be returned to stock (unless marked damaged). Accounts will be adjusted automatically.
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto mb-4 border rounded-lg border-slate-100">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 sticky top-0">
-              <tr className="border-b border-slate-200 text-slate-600">
-                <th className="p-3 font-semibold text-left">Item Name</th>
-                <th className="p-3 font-semibold text-center">Sold</th>
-                <th className="p-3 font-semibold text-center w-24">Return Qty</th>
-                <th className="p-3 font-semibold text-center">Damaged?</th>
-                <th className="p-3 font-semibold text-right">Refund</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(item => (
-                <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                  <td className="p-3">
-                    <div className="font-medium text-slate-800">{item.product_name}</div>
-                    <div className="text-xs text-slate-500">{formatCurrency(item.unit_price, currencySymbol)}</div>
-                  </td>
-                  <td className="p-3 text-center text-slate-600">{item.quantity}</td>
-                  <td className="p-3">
-                    <input
-                      type="number"
-                      className="input py-1 text-center w-full"
-                      value={returnQtys[item.id] || ''}
-                      onChange={(e) => handleQtyChange(item.id, parseInt(e.target.value) || 0, item.quantity)}
-                      placeholder="0"
-                    />
-                  </td>
-                  <td className="p-3 text-center">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
-                      checked={!!damagedMap[item.id]}
-                      onChange={(e) => setDamagedMap(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                    />
-                  </td>
-                  <td className="p-3 text-right font-bold text-slate-700">
-                    {formatCurrency((returnQtys[item.id] || 0) * item.unit_price, currencySymbol)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="overlay no-print" onClick={onClose} />
+      <div className="dialog w-[400px] print-receipt font-mono text-sm">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 no-print">
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Refund Method</label>
-            <select
-              className="input w-full"
-              value={refundMethod}
-              onChange={(e) => setRefundMethod(e.target.value as any)}
-            >
-              <option value="cash">Cash Refund</option>
-              {sale.customer_id && <option value="adjustment">Deduct from Customer Udhaar</option>}
-            </select>
+            <h2 className="text-lg font-bold text-slate-800">Exchange Receipt</h2>
           </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Total Refund</label>
-            <div className="text-2xl font-black text-rose-600">{formatCurrency(totalRefund, currencySymbol)}</div>
-          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-red-500 no-print"><X className="w-5 h-5" /></button>
         </div>
 
-        <div>
-          <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Return Reason (Optional)</label>
-          <input
-            type="text"
-            className="input w-full mb-6"
-            placeholder="e.g., Size issue, Wrong color..."
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
+        <div style={{ fontFamily: shopInfo.receipt_font || "'Courier New', Courier, monospace", fontSize: '12px', lineHeight: '1.6', color: '#000', letterSpacing: '0.02em' }}>
+          
+          <div style={{ textAlign: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px dashed #333' }}>
+            {shopInfo.shop_logo && (
+              <img src={shopInfo.shop_logo} alt="Logo" style={{ width: `${shopInfo.logo_width || 120}px`, height: `${shopInfo.logo_height || 120}px`, margin: shopInfo.logo_align === 'center' ? '0 auto 6px' : shopInfo.logo_align === 'right' ? '0 0 6px auto' : '0 auto 6px 0', display: 'block', objectFit: 'contain' }} />
+            )}
+            <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{shopInfo.shop_name || 'My Shop'}</div>
+            {shopInfo.shop_address && <div style={{ fontSize: '11px', marginTop: '2px' }}>{shopInfo.shop_address}</div>}
+            {shopInfo.shop_phone && <div style={{ fontSize: '11px' }}>{shopInfo.shop_phone}</div>}
+          </div>
+
+          <div style={{ textAlign: 'center', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', padding: '4px 0' }}>
+            EXCHANGE RECEIPT
+          </div>
+
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Date:</span><span>{format(new Date(), 'dd MMM yyyy, hh:mm a')}</span></div>
+            {ret && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Return Ref:</span><span>{ret.return_number}</span></div>}
+            {sale && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sale Ref:</span><span>{sale.invoice_number}</span></div>}
+          </div>
+
+          {/* Returned Items */}
+          {retItems.length > 0 && (
+            <>
+              <div style={{ borderTop: '1px dashed #333', borderBottom: '1px dashed #333', padding: '4px 0', marginBottom: '4px', marginTop: '8px' }}>
+                <div style={{ fontWeight: 'bold' }}>RETURNED ITEMS</div>
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                {retItems.map((i: any, index: number) => (
+                  <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex' }}>
+                      <span style={{ flex: '1 1 40%', wordBreak: 'break-word', color: '#c00' }}>- {i.product_name}</span>
+                      <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
+                      <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currencySymbol)}</span>
+                      <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>-{formatCurrency(i.total_refund, currencySymbol)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* New Sale Items */}
+          {saleItems.length > 0 && (
+            <>
+              <div style={{ borderTop: '1px dashed #333', borderBottom: '1px dashed #333', padding: '4px 0', marginBottom: '4px', marginTop: '8px' }}>
+                <div style={{ fontWeight: 'bold' }}>NEW ITEMS</div>
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                {saleItems.map((i: any, index: number) => (
+                  <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex' }}>
+                      <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{index + 1}. {i.product_name}</span>
+                      <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
+                      <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currencySymbol)}</span>
+                      <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(i.total_price, currencySymbol)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div style={{ borderTop: '1px dashed #333', paddingTop: '6px', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TOTAL REFUND:</span><span style={{ color: '#c00' }}>-{formatCurrency(totalRefund, currencySymbol)}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>NEW SALE TOTAL:</span><span>{formatCurrency(totalSale, currencySymbol)}</span></div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '4px 0', margin: '4px 0' }}>
+            <span>NET {netAmount > 0 ? "DUE" : "REFUND"}:</span><span>{formatCurrency(Math.abs(netAmount), currencySymbol)}</span>
+          </div>
+
+          <div style={{ borderTop: '3px double #333', marginBottom: '8px' }}></div>
+          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '10px' }}>
+            {(shopInfo.receipt_footer || 'Thank You!').split('\n').map((line: string, idx: number) => (
+              <div key={idx}>{line}</div>
+            ))}
+          </div>
+
+          {sale && (
+            <div style={{ textAlign: 'center', margin: '8px 0' }}>
+              <Barcode value={sale.invoice_number} width={1.2} height={40} displayValue={true} fontSize={11} margin={0} font="'Courier New', monospace" />
+            </div>
+          )}
         </div>
 
-        <div className="flex gap-3">
-          <button onClick={onClose} className="btn-secondary flex-1" disabled={isSubmitting}>Cancel</button>
-          <button
-            onClick={handleSubmit}
-            className="btn-primary flex-1 bg-rose-600 hover:bg-rose-700 border-rose-600"
-            disabled={isSubmitting || totalRefund <= 0}
-          >
-            {isSubmitting ? "Processing..." : `Confirm Return & Refund`}
+        <div className="mt-6 flex flex-col gap-3 no-print">
+          {printerConfig.printer_type && printerConfig.printer_type !== 'none' && (
+            <button onClick={handlePrint} className="btn-primary py-2 rounded-lg flex items-center justify-center gap-2">
+              <Printer className="w-4 h-4" /> Print Receipt (Thermal Printer)
+            </button>
+          )}
+          <button onClick={() => window.print()} className={`${printerConfig.printer_type && printerConfig.printer_type !== 'none' ? 'btn-secondary' : 'btn-primary'} py-2 rounded-lg flex items-center justify-center gap-2`}>
+            <Eye className="w-4 h-4" /> Print Preview (Browser)
           </button>
         </div>
       </div>

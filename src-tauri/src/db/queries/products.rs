@@ -1010,7 +1010,7 @@ pub fn get_main_categories(conn: &Connection) -> Result<Vec<Category>> {
         SELECT c.id, c.name, c.parent_id, 
             (SELECT COUNT(*) FROM categories sc WHERE sc.parent_id = c.id) as sub_count
         FROM categories c
-        WHERE c.parent_id IS NULL AND c.id IN (100, 200, 300)
+        WHERE c.parent_id IS NULL
         ORDER BY c.id
     ")?;
     let rows = stmt.query_map([], |row| {

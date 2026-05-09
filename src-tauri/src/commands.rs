@@ -351,6 +351,15 @@ pub fn get_sale_with_items(
 }
 
 #[tauri::command]
+pub fn get_return_with_items(
+    db: State<DbState>,
+    id: i64,
+) -> Result<(sales::SalesReturn, Vec<sales::SalesReturnItem>), String> {
+    let conn = db.lock();
+    sales::get_return_with_items(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_sales_by_date(
     db: State<DbState>,
     from: String,
@@ -850,17 +859,7 @@ pub fn get_financial_summary(db: State<DbState>) -> Result<financials::Financial
 pub async fn shopify_test_connection(
     db: State<'_, DbState>,
 ) -> Result<crate::shopify::client::ShopInfo, String> {
-    let (domain, token) = {
-        let conn = db.lock();
-        let settings = settings::get_all_settings(&conn).map_err(|e| e.to_string())?;
-        let domain = settings.get("shopify_domain").cloned().unwrap_or_default();
-        let token = settings.get("shopify_token").cloned().unwrap_or_default();
-        (domain, token)
-    };
-    if domain.is_empty() || token.is_empty() {
-        return Err("Shopify domain and access token are required".into());
-    }
-    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    let client = get_shopify_client(&db).await?;
     client.test_connection().await
 }
 
@@ -868,8 +867,7 @@ pub async fn shopify_test_connection(
 pub async fn shopify_get_locations(
     db: State<'_, DbState>,
 ) -> Result<Vec<crate::shopify::client::ShopifyLocation>, String> {
-    let (domain, token) = get_shopify_creds(&db)?;
-    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    let client = get_shopify_client(&db).await?;
     client.get_locations().await
 }
 
@@ -878,8 +876,7 @@ pub async fn shopify_sync_product(
     db: State<'_, DbState>,
     product_id: i64,
 ) -> Result<String, String> {
-    let (domain, token) = get_shopify_creds(&db)?;
-    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    let client = get_shopify_client(&db).await?;
 
     // Fetch local product + variants
     let (product, variants, existing_mappings) = {
@@ -920,6 +917,7 @@ pub async fn shopify_sync_product(
             id: shopify_pid,
             title: Some(product.name.clone()),
             body_html: product.description.clone(),
+            status: Some("active".to_string()),
             variants: Some(shopify_variants),
         };
 
@@ -971,6 +969,7 @@ pub async fn shopify_sync_product(
             body_html: product.description.clone(),
             vendor: product.brand.clone(),
             product_type: product.category_name.clone(),
+            status: Some("active".to_string()),
             variants: shopify_variants,
         };
 
@@ -1009,8 +1008,7 @@ pub async fn shopify_sync_inventory(
     variant_id: i64,
     quantity: i64,
 ) -> Result<String, String> {
-    let (domain, token) = get_shopify_creds(&db)?;
-    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    let client = get_shopify_client(&db).await?;
 
     let (mapping, location_id) = {
         let conn = db.lock();
@@ -1052,8 +1050,7 @@ pub async fn shopify_create_order(
     db: State<'_, DbState>,
     sale_id: i64,
 ) -> Result<String, String> {
-    let (domain, token) = get_shopify_creds(&db)?;
-    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    let client = get_shopify_client(&db).await?;
 
     let (sale, items) = {
         let conn = db.lock();
@@ -1147,8 +1144,7 @@ pub async fn shopify_retry_pending(
         return Ok("No pending syncs to retry".into());
     }
 
-    let (domain, token) = get_shopify_creds(&db)?;
-    let client = crate::shopify::client::ShopifyClient::new(&domain, &token)?;
+    let client = get_shopify_client(&db).await?;
 
     let mut success_count = 0;
     let mut fail_count = 0;
@@ -1221,15 +1217,42 @@ pub fn shopify_clear_done_syncs(db: State<DbState>) -> Result<usize, String> {
     shopify::clear_done_syncs(&conn).map_err(|e| e.to_string())
 }
 
-fn get_shopify_creds(db: &State<DbState>) -> Result<(String, String), String> {
-    let conn = db.lock();
-    let settings = settings::get_all_settings(&conn).map_err(|e| e.to_string())?;
-    let domain = settings.get("shopify_domain").cloned().unwrap_or_default();
-    let token = settings.get("shopify_token").cloned().unwrap_or_default();
-    if domain.is_empty() || token.is_empty() {
-        return Err("Shopify not configured. Go to Settings → Shopify.".into());
+/// Build a ShopifyClient from saved settings.
+/// Supports two auth modes:
+///   1. Direct access token (shpat_...) — legacy custom apps
+///   2. Client ID + Client Secret — Dev Dashboard apps (exchanges for temp token)
+async fn get_shopify_client(db: &State<'_, DbState>) -> Result<crate::shopify::client::ShopifyClient, String> {
+    let (domain, token, client_id, client_secret) = {
+        let conn = db.lock();
+        let settings = settings::get_all_settings(&conn).map_err(|e| e.to_string())?;
+        (
+            settings.get("shopify_domain").cloned().unwrap_or_default(),
+            settings.get("shopify_token").cloned().unwrap_or_default(),
+            settings.get("shopify_client_id").cloned().unwrap_or_default(),
+            settings.get("shopify_client_secret").cloned().unwrap_or_default(),
+        )
+    };
+
+    if domain.is_empty() {
+        return Err("Shopify domain is required. Go to Settings → Shopify.".into());
     }
-    Ok((domain, token))
+
+    // Priority 1: Direct access token (shpat_)
+    if !token.is_empty() {
+        return crate::shopify::client::ShopifyClient::new(&domain, &token);
+    }
+
+    // Priority 2: Client credentials grant (client_id + client_secret)
+    if !client_id.is_empty() && !client_secret.is_empty() {
+        return crate::shopify::client::ShopifyClient::from_client_credentials(
+            &domain,
+            &client_id,
+            &client_secret,
+        )
+        .await;
+    }
+
+    Err("Shopify not configured. Provide either an Access Token or Client ID + Client Secret in Settings → Shopify.".into())
 }
 
 /// Initialize database — called at app start

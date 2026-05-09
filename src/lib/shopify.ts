@@ -118,7 +118,7 @@ export async function clearDoneSyncs(): Promise<number> {
 export async function isShopifyConfigured(): Promise<boolean> {
   try {
     const settings = await cmd<Record<string, string>>('get_all_settings');
-    return !!(settings?.shopify_domain && settings?.shopify_token);
+    return !!(settings?.shopify_domain && (settings?.shopify_token || (settings?.shopify_client_id && settings?.shopify_client_secret)));
   } catch {
     return false;
   }

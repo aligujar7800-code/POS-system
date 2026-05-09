@@ -11,7 +11,59 @@ pub struct ShopifyClient {
     client: reqwest::Client,
 }
 
+/// Exchange Client ID + Client Secret for a temporary access token via OAuth
+/// client_credentials grant. Token expires in ~24 hours.
+pub async fn exchange_client_credentials(
+    store_domain: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<String, String> {
+    let domain = store_domain
+        .trim()
+        .trim_end_matches('/')
+        .replace("https://", "")
+        .replace("http://", "");
+
+    let url = format!("https://{}/admin/oauth/access_token", domain);
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let resp = http
+        .post(&url)
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("OAuth request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "OAuth token exchange failed ({}): {}",
+            status, body
+        ));
+    }
+
+    let data: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("OAuth parse error: {}", e))?;
+
+    data["access_token"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No access_token in OAuth response".to_string())
+}
+
 impl ShopifyClient {
+    /// Create a client with a direct access token (shpat_...)
     pub fn new(store_domain: &str, access_token: &str) -> Result<Self, String> {
         let domain = store_domain
             .trim()
@@ -36,6 +88,18 @@ impl ShopifyClient {
             base_url: format!("https://{}/admin/api/{}", domain, API_VERSION),
             client,
         })
+    }
+
+    /// Create a client using Client ID + Client Secret (Dev Dashboard).
+    /// Automatically exchanges credentials for a temporary access token.
+    pub async fn from_client_credentials(
+        store_domain: &str,
+        client_id: &str,
+        client_secret: &str,
+    ) -> Result<Self, String> {
+        let token =
+            exchange_client_credentials(store_domain, client_id, client_secret).await?;
+        Self::new(store_domain, &token)
     }
 
     // ─── Connection Test ─────────────────────────────────────────────────
@@ -212,6 +276,8 @@ pub struct CreateShopifyProduct {
     pub vendor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub product_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
     pub variants: Vec<ShopifyVariant>,
 }
 
@@ -222,6 +288,8 @@ pub struct UpdateShopifyProduct {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variants: Option<Vec<ShopifyVariant>>,
 }

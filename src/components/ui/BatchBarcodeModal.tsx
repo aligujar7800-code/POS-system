@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Barcode from 'react-barcode';
 import { X, Printer, Tag, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cmd } from '../../lib/utils';
@@ -75,6 +76,7 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
         .map(v => ({
           shop_name: settings.shop_name,
           product_name: product.name,
+          sku: product.sku,
           size: v.size,
           color: v.color,
           price: showDiscount ? salePrice : (v.variant_price || product.sale_price),
@@ -114,7 +116,7 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+      <div className="relative w-full max-w-2xl max-h-[95vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
         <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center text-brand-600">
@@ -130,7 +132,56 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
           </button>
         </div>
 
-        <div className="p-0 max-h-[60vh] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="bg-slate-50/50 p-6 border-b border-slate-100 flex flex-col items-center gap-4">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Layout Preview</p>
+          <div 
+            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col transition-all overflow-hidden"
+            style={{
+              width: '280px',
+              minHeight: '160px',
+              fontFamily: "'Courier New', Courier, monospace"
+            }}
+          >
+            {/* Row 1: Product Name + Size */}
+            <div className="flex justify-between items-start mb-1">
+              <span className="font-extrabold text-[13px] text-slate-900 uppercase leading-tight truncate flex-1">{product.name}</span>
+              <span className="text-[12px] font-bold text-slate-700 ml-2 whitespace-nowrap">{items.find(i => i.printQty > 0)?.size || 'Size'}</span>
+            </div>
+
+            {/* Row 2: Article/SKU + Color */}
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase">ART-{product.sku}</span>
+              <span className="text-[11px] font-semibold text-slate-500">{items.find(i => i.printQty > 0)?.color || 'Color'}</span>
+            </div>
+
+            {/* Row 3: Price */}
+            <div className="flex items-baseline gap-4 mb-2">
+              {showDiscount ? (
+                <>
+                  <span className="line-through text-[14px] font-extrabold text-slate-400 decoration-2">MRP: {mrpPrice.toLocaleString()}</span>
+                  <span className="text-[16px] font-black text-slate-900">SALE: {salePrice.toLocaleString()}</span>
+                </>
+              ) : (
+                <span className="text-[16px] font-black text-slate-900">{settings.currency_symbol} {product.sale_price.toLocaleString()}</span>
+              )}
+            </div>
+
+            {/* Row 4: Barcode */}
+            <div className="flex justify-center mt-auto">
+              <Barcode 
+                value={items.find(i => i.printQty > 0)?.variant_barcode || '12345678'} 
+                width={1.4} 
+                height={45} 
+                fontSize={12}
+                margin={0}
+                font="'Courier New', monospace"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="p-0 border-b border-slate-100">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
               <tr className="text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -190,8 +241,9 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
             </div>
           )}
         </div>
+      </div>
 
-        <div className="p-6 bg-slate-50/80 border-t border-slate-100">
+      <div className="p-4 bg-slate-50/80 border-t border-slate-100">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
               <div>
@@ -229,13 +281,13 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
             </div>
           </div>
           
-          <div className="flex items-center gap-2 text-[10px] text-slate-500 bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+          <div className="flex items-center gap-2 text-[9px] text-slate-500 bg-blue-50/50 p-2 rounded-lg border border-blue-100 mb-3">
             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             Each label will include Shop Name, Product Name, Variant Details, Price, and Barcode.
           </div>
 
           {/* Discount Toggle */}
-          <div className="mt-3">
+          <div>
             <button
               onClick={() => {
                 setShowDiscount(!showDiscount);
@@ -255,7 +307,7 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
             </button>
 
             {showDiscount && (
-              <div className="flex gap-3 mt-3">
+              <div className="flex gap-3 mt-2">
                 <div className="flex-1">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">M.R.P (Original)</label>
                   <input

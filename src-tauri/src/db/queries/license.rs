@@ -8,6 +8,8 @@ const DEV_APP_PASSWORD: &str = "fukh wyzw kobv imrl";
 const LICENSE_SECRET: &str = "FashionPointPOS_2026_SecretKey_XkZ9mQ";
 /// Remote URL where you list approved Machine IDs and their expiry days
 const ONLINE_LICENSES_URL: &str = "https://raw.githubusercontent.com/aligujar7800-code/POS-system/main/licenses.json";
+/// Default license validity in days (for manual key activation)
+const DEFAULT_LICENSE_DAYS: i64 = 30;
 // ────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -17,6 +19,8 @@ pub struct LicenseInfo {
     pub activated_at: String,
     pub expiry_date: Option<String>,
     pub status: String,
+    /// Days remaining until expiry (-1 = expired, 0 = last day)
+    pub days_remaining: Option<i64>,
 }
 
 #[derive(serde::Deserialize)]
@@ -65,7 +69,18 @@ pub fn generate_key_for_machine(machine_id: &str) -> String {
     )
 }
 
-/// Check if the machine is approved in the online JSON file
+/// Calculate days remaining from an expiry date string
+fn calc_days_remaining(expiry_str: &str) -> i64 {
+    if let Ok(expiry) = chrono::NaiveDate::parse_from_str(expiry_str, "%Y-%m-%d") {
+        let today = chrono::Utc::now().naive_utc().date();
+        (expiry - today).num_days()
+    } else {
+        -1
+    }
+}
+
+/// Check if the machine is approved in the online JSON file.
+/// If found, activate/renew the license for the specified number of days.
 pub async fn check_online_activation(db: tauri::State<'_, crate::commands::DbState>) -> std::result::Result<Option<LicenseInfo>, String> {
     let machine_id = get_machine_fingerprint()?;
     
@@ -79,7 +94,7 @@ pub async fn check_online_activation(db: tauri::State<'_, crate::commands::DbSta
     if let Ok(resp) = response {
         if let Ok(entries) = resp.json::<Vec<OnlineLicenseEntry>>().await {
             if let Some(entry) = entries.iter().find(|e| e.machine_id == machine_id) {
-                // Auto-activate!
+                // Auto-activate or RENEW!
                 let key = generate_key_for_machine(&machine_id);
                 let expiry = chrono::Utc::now() + chrono::Duration::days(entry.days);
                 let expiry_str = expiry.format("%Y-%m-%d").to_string();
@@ -99,12 +114,15 @@ pub async fn check_online_activation(db: tauri::State<'_, crate::commands::DbSta
                     ).map_err(|e: rusqlite::Error| e.to_string())?;
                 }
 
+                let days_remaining = calc_days_remaining(&expiry_str);
+
                 return Ok(Some(LicenseInfo {
                     license_key: key,
                     machine_id,
                     activated_at: chrono::Utc::now().to_rfc3339(),
                     expiry_date: Some(expiry_str),
                     status: "active".to_string(),
+                    days_remaining: Some(days_remaining),
                 }));
             }
         }
@@ -124,17 +142,63 @@ pub fn get_license_status(conn: &Connection) -> Result<Option<LicenseInfo>> {
                 activated_at: row.get(2)?,
                 expiry_date: row.get(3)?,
                 status: row.get(4)?,
+                days_remaining: None,
             })
         },
     ) {
-        Ok(info) => {
+        Ok(mut info) => {
             // Check if expired
             if let Some(ref date_str) = info.expiry_date {
-                if let Ok(expiry) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                    if expiry < chrono::Utc::now().naive_utc().date() {
-                        let mut expired_info = info.clone();
-                        expired_info.status = "expired".to_string();
-                        return Ok(Some(expired_info));
+                let mut days = calc_days_remaining(date_str);
+                
+                // Force max 30 days for ANY existing license (e.g. from old 3000-day configs)
+                if days > DEFAULT_LICENSE_DAYS {
+                    let new_expiry = chrono::Utc::now() + chrono::Duration::days(DEFAULT_LICENSE_DAYS);
+                    let new_expiry_str = new_expiry.format("%Y-%m-%d").to_string();
+                    let _ = conn.execute(
+                        "UPDATE app_license SET expiry_date = ?1 WHERE id = 1",
+                        params![new_expiry_str],
+                    );
+                    info.expiry_date = Some(new_expiry_str);
+                    days = DEFAULT_LICENSE_DAYS;
+                }
+
+                info.days_remaining = Some(days);
+
+                if days < 0 {
+                    // License has expired — update DB status too
+                    info.status = "expired".to_string();
+                    let _ = conn.execute(
+                        "UPDATE app_license SET status = 'expired' WHERE id = 1",
+                        [],
+                    );
+                }
+            } else {
+                // No expiry date means it was an old unlimited license
+                // Enforce 30-day limit: set expiry to 30 days from activated_at
+                if let Ok(activated) = chrono::NaiveDate::parse_from_str(
+                    &info.activated_at.split('T').next().unwrap_or(&info.activated_at).split(' ').next().unwrap_or(&info.activated_at),
+                    "%Y-%m-%d"
+                ) {
+                    let expiry = activated + chrono::Duration::days(DEFAULT_LICENSE_DAYS);
+                    let expiry_str = expiry.format("%Y-%m-%d").to_string();
+                    let days = calc_days_remaining(&expiry_str);
+                    
+                    // Update DB with the calculated expiry
+                    let _ = conn.execute(
+                        "UPDATE app_license SET expiry_date = ?1 WHERE id = 1",
+                        params![expiry_str],
+                    );
+
+                    info.expiry_date = Some(expiry_str);
+                    info.days_remaining = Some(days);
+
+                    if days < 0 {
+                        info.status = "expired".to_string();
+                        let _ = conn.execute(
+                            "UPDATE app_license SET status = 'expired' WHERE id = 1",
+                            [],
+                        );
                     }
                 }
             }
@@ -145,7 +209,7 @@ pub fn get_license_status(conn: &Connection) -> Result<Option<LicenseInfo>> {
     }
 }
 
-/// Activate a license key manually (fallback)
+/// Activate a license key manually — always 30 days
 pub fn activate_license(conn: &Connection, key: &str) -> std::result::Result<LicenseInfo, String> {
     let machine_id = get_machine_fingerprint()?;
 
@@ -154,16 +218,20 @@ pub fn activate_license(conn: &Connection, key: &str) -> std::result::Result<Lic
         return Err("Invalid license key".to_string());
     }
 
+    // Set expiry to 30 days from now
+    let expiry = chrono::Utc::now() + chrono::Duration::days(DEFAULT_LICENSE_DAYS);
+    let expiry_str = expiry.format("%Y-%m-%d").to_string();
+
     conn.execute(
         "INSERT INTO app_license (id, license_key, machine_id, expiry_date, status)
-         VALUES (1, ?1, ?2, NULL, 'active')
+         VALUES (1, ?1, ?2, ?3, 'active')
          ON CONFLICT(id) DO UPDATE SET
             license_key = excluded.license_key,
             machine_id = excluded.machine_id,
             activated_at = datetime('now'),
-            expiry_date = NULL,
+            expiry_date = excluded.expiry_date,
             status = 'active'",
-        params![key.trim().to_uppercase(), machine_id],
+        params![key.trim().to_uppercase(), machine_id, expiry_str],
     )
     .map_err(|e| format!("DB error: {}", e))?;
 
@@ -171,8 +239,9 @@ pub fn activate_license(conn: &Connection, key: &str) -> std::result::Result<Lic
         license_key: key.to_string(),
         machine_id,
         activated_at: chrono::Utc::now().to_rfc3339(),
-        expiry_date: None,
+        expiry_date: Some(expiry_str.clone()),
         status: "active".to_string(),
+        days_remaining: Some(DEFAULT_LICENSE_DAYS),
     })
 }
 
@@ -192,6 +261,8 @@ pub fn send_license_request(
          Customer Name : {}\n\
          Phone         : {}\n\
          Machine ID    : {}\n\n\
+         ───────────────────────────────────────\n\
+         ⚠️  LICENSE IS VALID FOR 30 DAYS ONLY\n\
          ───────────────────────────────────────\n\
          To activate, add this to your GitHub licenses.json:\n\n\
          {{\"machine_id\": \"{}\", \"days\": 30}}\n\

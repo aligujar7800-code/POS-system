@@ -96,41 +96,48 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
           <div className="flex flex-col items-center gap-6">
             {/* Barcode Preview */}
             <div 
-              className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center transition-all overflow-hidden"
+              className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col transition-all overflow-hidden"
               style={{
-                width: '220px',
-                height: '140px',
-                aspectRatio: '304/204'
+                width: '280px',
+                minHeight: '160px',
+                fontFamily: "'Courier New', Courier, monospace"
               }}
             >
-              <div className="text-center w-full mb-2">
-                <p className="text-[10px] font-black text-brand-600 uppercase tracking-widest leading-none mb-1">{settings.shop_name}</p>
-                <p className="font-bold text-sm text-slate-900 leading-tight truncate">{product.name}</p>
-                <p className="text-[10px] text-slate-500 font-medium">
-                  {product.size && <span>{product.size}</span>}
-                  {product.size && product.color && <span> / </span>}
-                  {product.color && <span>{product.color}</span>}
-                  {product.sku && <span className="ml-1 opacity-50">[{product.sku}]</span>}
-                </p>
-                <p className="font-black text-slate-800 text-sm mt-1">
-                  {showDiscount ? (
-                    <>
-                      <span className="line-through text-slate-400 text-xs mr-1">M.R.P {settings.currency_symbol}{mrpPrice}</span>
-                      <span className="text-emerald-600">Sale {settings.currency_symbol}{salePrice}</span>
-                    </>
-                  ) : (
-                    <>{settings.currency_symbol}{product.price}</>
-                  )}
-                </p>
+              {/* Row 1: Product Name + Size */}
+              <div className="flex justify-between items-start mb-1">
+                <span className="font-extrabold text-[13px] text-slate-900 uppercase leading-tight truncate flex-1">{product.name}</span>
+                {product.size && <span className="text-[12px] font-bold text-slate-700 ml-2 whitespace-nowrap">{product.size}</span>}
               </div>
 
-              <Barcode 
-                value={product.barcode} 
-                width={1.1} 
-                height={35} 
-                fontSize={10}
-                margin={0}
-              />
+              {/* Row 2: Article/SKU + Color */}
+              <div className="flex justify-between items-center mb-1">
+                {product.sku && <span className="text-[10px] font-bold text-slate-500 uppercase">ART-{product.sku}</span>}
+                {product.color && <span className="text-[11px] font-semibold text-slate-500">{product.color}</span>}
+              </div>
+
+              {/* Row 3: Price (MRP + Sale or just Price) */}
+              <div className="flex items-baseline gap-4 mb-2">
+                {showDiscount ? (
+                  <>
+                    <span className="line-through text-[14px] font-extrabold text-slate-400 decoration-2">MRP: {mrpPrice.toLocaleString()}</span>
+                    <span className="text-[16px] font-black text-slate-900">SALE: {salePrice.toLocaleString()}</span>
+                  </>
+                ) : (
+                  <span className="text-[16px] font-black text-slate-900">{settings.currency_symbol} {product.price.toLocaleString()}</span>
+                )}
+              </div>
+
+              {/* Row 4: Barcode */}
+              <div className="flex justify-center mt-auto">
+                <Barcode 
+                  value={product.barcode} 
+                  width={1.4} 
+                  height={45} 
+                  fontSize={12}
+                  margin={0}
+                  font="'Courier New', monospace"
+                />
+              </div>
             </div>
 
             <div className="w-full space-y-4">
