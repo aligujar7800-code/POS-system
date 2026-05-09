@@ -231,6 +231,7 @@ pub struct LabelBatchItem {
     pub price: f64,
     pub barcode: String,
     pub quantity: u32,
+    pub protocol: Option<String>,
     pub offset_x: Option<i32>,
     pub offset_y: Option<i32>,
     pub mrp: Option<f64>,  // Original price before discount

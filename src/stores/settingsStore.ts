@@ -15,6 +15,7 @@ interface Settings {
   printer_port: string;
   printer_baud: number;
   label_printer_port: string;
+  label_printer_protocol: 'epl' | 'zpl' | 'tspl';
   label_offset_x: number;
   label_offset_y: number;
   language: string;
@@ -47,6 +48,7 @@ export const useSettingsStore = create<SettingsState>()(
       printer_port: '',
       printer_baud: 9600,
       label_printer_port: '',
+      label_printer_protocol: 'epl',
       label_offset_x: 0,
       label_offset_y: 0,
       language: 'en',

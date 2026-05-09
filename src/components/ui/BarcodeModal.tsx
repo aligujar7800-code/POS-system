@@ -46,7 +46,7 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
           barcode: product.barcode,
           quantity: quantity,
           template: 'small',
-          protocol: 'epl',
+          protocol: settings.label_printer_protocol,
           offset_x: settings.label_offset_x,
           offset_y: settings.label_offset_y,
           mrp: showDiscount ? mrpPrice : null

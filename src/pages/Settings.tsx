@@ -832,9 +832,22 @@ export default function SettingsPage() {
                           </optgroup>
                         </select>
                       </div>
+
+                      <div>
+                        <label className="label text-xs">Printer Command Language (Protocol)</label>
+                        <select 
+                          value={settings.label_printer_protocol} 
+                          onChange={(e) => settings.setSettings({ label_printer_protocol: e.target.value as any })} 
+                          className="input bg-white"
+                        >
+                          <option value="epl">EPL2 (Zebra TLP, Old Eltron, Generic Thermal)</option>
+                          <option value="zpl">ZPL II (Modern Zebra, GK, ZT series)</option>
+                          <option value="tspl">TSPL (Xprinter, TSC, Dymo, Generic Chinese)</option>
+                        </select>
+                      </div>
                       
                       <p className="text-[10px] text-slate-400 italic">
-                        Tip: Select your Zebra or Xprinter here to use it specifically for barcode labels.
+                        Tip: Select your Zebra or Xprinter here to use it specifically for barcode labels. If the printer prints blank or ignores commands, try changing the Protocol.
                       </p>
                     </div>
                   </div>
@@ -843,6 +856,11 @@ export default function SettingsPage() {
                 <div className="pt-4 flex justify-end">
                   <button 
                     onClick={() => {
+                      settings.setSettings({
+                        printer_type: printerType,
+                        printer_port: printerPort,
+                        printer_baud: parseInt(printerBaud) || 9600,
+                      });
                       toast("Hardware settings saved successfully");
                     }} 
                     className="btn-primary px-8"

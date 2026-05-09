@@ -82,6 +82,7 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
           price: showDiscount ? salePrice : (v.variant_price || product.sale_price),
           barcode: v.variant_barcode || '',
           quantity: v.printQty,
+          protocol: settings.label_printer_protocol,
           offset_x: settings.label_offset_x,
           offset_y: settings.label_offset_y,
           mrp: showDiscount ? mrpPrice : null
