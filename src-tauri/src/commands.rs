@@ -622,6 +622,14 @@ pub fn print_label_batch(
 }
 
 #[tauri::command]
+pub fn test_label_print(
+    config: printer::PrinterConfig,
+    protocol: String,
+) -> Result<(), String> {
+    label::test_label_print(&config, &protocol)
+}
+
+#[tauri::command]
 pub fn print_sale_by_id(
     db: State<DbState>,
     id: i64,

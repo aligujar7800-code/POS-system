@@ -204,6 +204,25 @@ export default function SettingsPage() {
     }
   };
 
+  const testLabelPrint = async () => {
+    try {
+      const port = settings.label_printer_port || settings.printer_port;
+      const pType = (() => {
+        if (port.toUpperCase().startsWith('COM')) return 'serial';
+        if (port.startsWith('usb:')) return 'usb';
+        if (port.includes('.') && port.includes(':')) return 'network';
+        return 'system';
+      })();
+      await cmd('test_label_print', {
+        config: { printer_type: pType, port: port, baud_rate: parseInt(printerBaud) || 9600 },
+        protocol: settings.label_printer_protocol || 'epl'
+      });
+      toast(`Test label sent via ${settings.label_printer_protocol || 'epl'}`, 'success');
+    } catch (e: any) {
+      toast('Label test failed: ' + e.toString(), 'error');
+    }
+  };
+
   const addUser = async () => {
     if (!newUsername || !newPassword) { toast('Username and password required', 'error'); return; }
     try {
@@ -849,6 +868,10 @@ export default function SettingsPage() {
                       <p className="text-[10px] text-slate-400 italic">
                         Tip: Select your Zebra or Xprinter here to use it specifically for barcode labels. If the printer prints blank or ignores commands, try changing the Protocol.
                       </p>
+
+                      <button onClick={testLabelPrint} className="btn-secondary w-full text-xs mt-2">
+                        <Tag className="w-3.5 h-3.5" /> Test Barcode Print
+                      </button>
                     </div>
                   </div>
                 </div>

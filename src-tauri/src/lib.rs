@@ -111,6 +111,7 @@ pub fn run() {
             print_receipt,
             print_label,
             print_label_batch,
+            test_label_print,
             print_sale_by_id,
             open_cash_drawer,
             // Backup

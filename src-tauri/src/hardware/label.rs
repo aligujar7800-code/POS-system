@@ -429,6 +429,25 @@ pub fn print_label(data: &LabelData, config: &PrinterConfig) -> Result<(), Strin
     Ok(())
 }
 
+pub fn test_label_print(config: &PrinterConfig, protocol: &str) -> Result<(), String> {
+    let test_data = LabelData {
+        shop_name: "TEST SHOP".to_string(),
+        product_name: "Test Barcode Label".to_string(),
+        sku: "TEST-123".to_string(),
+        size: Some("L".to_string()),
+        color: Some("Red".to_string()),
+        price: 999.0,
+        barcode: "123456789".to_string(),
+        quantity: 1,
+        template: "small".to_string(),
+        protocol: protocol.to_string(),
+        offset_x: Some(0),
+        offset_y: Some(0),
+        mrp: None,
+    };
+    print_label(&test_data, config)
+}
+
 /// Send raw bytes directly to a Windows system printer using winspool API.
 /// This is required for Zebra/thermal printers that expect RAW ZPL/TSPL commands.
 #[cfg(target_os = "windows")]
