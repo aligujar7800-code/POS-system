@@ -109,10 +109,10 @@ fn send_bytes(config: &PrinterConfig, data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Build ESC/POS byte sequence for a professional receipt (48-char thermal)
+/// Build ESC/POS byte sequence for a professional receipt (42-char thermal)
 pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::new();
-    let w: usize = 48; // 80mm paper = 48 chars
+    let w: usize = 42; // Safe width for all thermal printers (58mm & 80mm)
 
     // ── Initialize ───────────────────────────────────────────────────────────
     buf.extend_from_slice(b"\x1b\x40"); // ESC @ – reset
@@ -165,8 +165,8 @@ pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
     // ── Items Header ────────────────────────────────────────────────────────
     buf.extend_from_slice(separator('-', w).as_bytes());
     buf.push(b'\n');
-    // Header: Item(18)  Qty(4)  Rate(9)  Price(9)  = 48 with spaces
-    let hdr = format!("{:<18} {:>4} {:>12} {:>10}", "Item", "Qty", "Rate", "Total");
+    // Header: Item(14)  Qty(3)  Rate(10)  Total(10) = 42 with spaces
+    let hdr = format!("{:<14} {:>3} {:>10} {:>10}", "Item", "Qty", "Rate", "Total");
     buf.extend_from_slice(hdr.as_bytes());
     buf.push(b'\n');
     buf.extend_from_slice(separator('-', w).as_bytes());
@@ -179,8 +179,8 @@ pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
         let rate_str = format!("Rs.{:.2}", item.unit_price);
         let price_str = format!("Rs.{:.2}", item.total);
 
-        if name.len() <= 18 {
-            let line = format!("{:<18} {:>4} {:>12} {:>10}",
+        if name.len() <= 14 {
+            let line = format!("{:<14} {:>3} {:>10} {:>10}",
                 name, qty_str, rate_str, price_str);
             buf.extend_from_slice(line.as_bytes());
             buf.push(b'\n');
@@ -188,7 +188,7 @@ pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
             // Name too long — print name on its own line, values on next
             buf.extend_from_slice(name.as_bytes());
             buf.push(b'\n');
-            let line = format!("{:<18} {:>4} {:>12} {:>10}",
+            let line = format!("{:<14} {:>3} {:>10} {:>10}",
                 "", qty_str, rate_str, price_str);
             buf.extend_from_slice(line.as_bytes());
             buf.push(b'\n');
