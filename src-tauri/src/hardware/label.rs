@@ -21,60 +21,201 @@ pub struct LabelData {
 }
 
 pub fn build_zpl_label(data: &LabelData) -> String {
-    let (w, h) = if data.template == "small" { (304, 204) } else { (464, 304) };
+    // TLP 2844-Z: 203 dpi, full printhead = 812 dots (4 inch)
+    // 2-across layout: each label ~380 dots wide
+    let label_w: i32 = 350;
+    let label_h = if data.template == "small" { 203 } else { 300 };
+    let full_w = 812; // full printhead width for 2-across
+
+    let off_x = data.offset_x.unwrap_or(0);
+    let off_y = data.offset_y.unwrap_or(0);
+    let lx = 30 + off_x;    // left label X origin (30 dots margin)
+    let rx = 430 + off_x;   // right label X origin
+
     let size_str = data.size.as_deref().unwrap_or("");
     let color_str = data.color.as_deref().unwrap_or("");
     let sku_str = if data.sku.is_empty() { String::new() } else { format!("ART-{}", data.sku) };
 
-    // Row 1: Product Name (left) + Size (right)
-    let mut name_section = format!("^FO10,10^A0N,24,24^FD{}^FS\n", data.product_name);
-    if !size_str.is_empty() {
-        name_section.push_str(&format!("^FO{},10^A0N,24,24^FD{}^FS\n", w - 60, size_str));
-    }
+    // Build content for one label at given X origin
+    let build_one = |x: i32| -> String {
+        let mut s = String::new();
 
-    // Row 2: ART-SKU (left) + Color (right)
-    let mut sku_section = String::new();
-    if !sku_str.is_empty() {
-        sku_section.push_str(&format!("^FO10,40^A0N,18,18^FD{}^FS\n", sku_str));
-    }
-    if !color_str.is_empty() {
-        sku_section.push_str(&format!("^FO{},40^A0N,18,18^FD{}^FS\n", w - 80, color_str));
-    }
+        let name_y = 8 + off_y;
+        let sku_y = 34 + off_y;
+        let price_y = 54 + off_y;
+        let barcode_y = 72 + off_y;
 
-    // Row 3: Price
-    let price_section = if let Some(mrp) = data.mrp {
-        format!(
-            "^FO10,65^A0N,28,28^FDMRP: {:.0}^FS\n\
-             ^FO10,73^GB150,1,2^FS\n\
-             ^FO{},65^A0N,28,28^FDSALE: {:.0}^FS\n",
-            mrp, w / 2 + 10, data.price
-        )
-    } else {
-        format!("^FO10,65^A0N,28,28^FDRs. {:.0}^FS\n", data.price)
+        // Row 1: Product Name (left) + Size (right)
+        s.push_str(&format!("^FO{},{}^A0N,22,22^FD{}^FS\n", x, name_y, data.product_name));
+        if !size_str.is_empty() {
+            let size_x = x + label_w - 50;
+            s.push_str(&format!("^FO{},{}^A0N,22,22^FD{}^FS\n", size_x, name_y, size_str));
+        }
+
+        // Row 2: ART-SKU (left) + Color (right)
+        if !sku_str.is_empty() {
+            s.push_str(&format!("^FO{},{}^A0N,18,18^FD{}^FS\n", x, sku_y, sku_str));
+        }
+        if !color_str.is_empty() {
+            let color_x = x + label_w - 70;
+            s.push_str(&format!("^FO{},{}^A0N,18,18^FD{}^FS\n", color_x, sku_y, color_str));
+        }
+
+        // Row 3: Price
+        if let Some(mrp) = data.mrp {
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FDMRP: {:.0}^FS\n", x, price_y, mrp));
+            let sale_x = x + label_w / 2;
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FDRs. {:.0}^FS\n", sale_x, price_y, data.price));
+        } else {
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FDRs. {:.0}^FS\n", x, price_y, data.price));
+        }
+
+        // Row 4: Barcode (Code 128 with human-readable number below)
+        s.push_str(&format!("^FO{},{}^BCN,40,Y,N,N^FD{}^FS\n", x, barcode_y, data.barcode));
+
+        s
     };
 
-    // Row 4: Barcode
-    let barcode_y = 100;
+    let mut cmds = String::new();
 
-    format!(
-        "^XA\n\
-         ^PW{w}\n\
-         ^LL{h}\n\
-         {name_section}\
-         {sku_section}\
-         {price_section}\
-         ^FO10,{barcode_y}^BCN,60,Y,N,N^FD{barcode}^FS\n\
-         ^PQ{qty}\n\
-         ^XZ\n",
-        name_section = name_section,
-        sku_section = sku_section,
-        price_section = price_section,
-        barcode = data.barcode,
-        barcode_y = barcode_y,
-        qty = data.quantity,
-        w = w,
-        h = h
-    )
+    let pairs = data.quantity / 2;
+    let remainder = data.quantity % 2;
+
+    // Print pairs (2 labels per row)
+    if pairs > 0 {
+        cmds.push_str(&format!(
+            "^XA\n^PW{}\n^LL{}\n{}{}^PQ{}\n^XZ\n",
+            full_w, label_h,
+            build_one(lx),
+            build_one(rx),
+            pairs
+        ));
+    }
+
+    // Print remainder (1 label, left side only)
+    if remainder > 0 {
+        cmds.push_str(&format!(
+            "^XA\n^PW{}\n^LL{}\n{}^PQ1\n^XZ\n",
+            full_w, label_h,
+            build_one(lx)
+        ));
+    }
+
+    cmds
+}
+
+/// Build ZPL commands for a batch of labels (2-across layout)
+/// Pairs different variants left-right across the printhead
+pub fn build_zpl_batch(items: &[LabelBatchItem], _shop_name: &str) -> String {
+    let mut cmds = String::new();
+    let label_w: i32 = 350;
+    let full_w = 812;
+    let label_h = 203;
+
+    // 1. Expand items by their quantity
+    let expanded: Vec<&LabelBatchItem> = items.iter()
+        .flat_map(|item| std::iter::repeat(item).take(item.quantity as usize))
+        .collect();
+
+    if expanded.is_empty() {
+        return cmds;
+    }
+
+    // 2. Pair them left-right
+    let mut pairs: Vec<(&LabelBatchItem, Option<&LabelBatchItem>)> = Vec::new();
+    let mut i = 0;
+    while i < expanded.len() {
+        let left = expanded[i];
+        let right = if i + 1 < expanded.len() { Some(expanded[i + 1]) } else { None };
+        pairs.push((left, right));
+        i += 2;
+    }
+
+    // Helper: build one ZPL label at position x
+    let build_one_zpl = |x: i32, item: &LabelBatchItem| -> String {
+        let mut s = String::new();
+        let off_y = item.offset_y.unwrap_or(0);
+        let size_str = item.size.as_deref().unwrap_or("");
+        let color_str = item.color.as_deref().unwrap_or("");
+        let sku_str = if item.sku.is_empty() { String::new() } else { format!("ART-{}", item.sku) };
+
+        let name_y = 8 + off_y;
+        let sku_y = 34 + off_y;
+        let price_y = 54 + off_y;
+        let barcode_y = 72 + off_y;
+
+        // Row 1: Product Name + Size
+        s.push_str(&format!("^FO{},{}^A0N,22,22^FD{}^FS\n", x, name_y, item.product_name));
+        if !size_str.is_empty() {
+            let size_x = x + label_w - 50;
+            s.push_str(&format!("^FO{},{}^A0N,22,22^FD{}^FS\n", size_x, name_y, size_str));
+        }
+
+        // Row 2: SKU + Color
+        if !sku_str.is_empty() {
+            s.push_str(&format!("^FO{},{}^A0N,18,18^FD{}^FS\n", x, sku_y, sku_str));
+        }
+        if !color_str.is_empty() {
+            let color_x = x + label_w - 70;
+            s.push_str(&format!("^FO{},{}^A0N,18,18^FD{}^FS\n", color_x, sku_y, color_str));
+        }
+
+        // Row 3: Price
+        if let Some(mrp) = item.mrp {
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FDMRP: {:.0}^FS\n", x, price_y, mrp));
+            let sale_x = x + label_w / 2;
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FDRs. {:.0}^FS\n", sale_x, price_y, item.price));
+        } else {
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FDRs. {:.0}^FS\n", x, price_y, item.price));
+        }
+
+        // Row 4: Barcode
+        s.push_str(&format!("^FO{},{}^BCN,40,Y,N,N^FD{}^FS\n", x, barcode_y, item.barcode));
+
+        s
+    };
+
+    // 3. Group consecutive identical pairs to compress
+    let mut i = 0;
+    while i < pairs.len() {
+        let current_pair = pairs[i];
+        let mut count = 1;
+
+        let mut j = i + 1;
+        while j < pairs.len() {
+            let next_pair = pairs[j];
+            let left_same = current_pair.0.barcode == next_pair.0.barcode;
+            let right_same = match (current_pair.1, next_pair.1) {
+                (Some(r1), Some(r2)) => r1.barcode == r2.barcode,
+                (None, None) => true,
+                _ => false,
+            };
+            if left_same && right_same {
+                count += 1;
+                j += 1;
+            } else {
+                break;
+            }
+        }
+
+        let left = current_pair.0;
+        let right = current_pair.1;
+        let off_x = left.offset_x.unwrap_or(0);
+        let lx = 30 + off_x;
+        let rx = 430 + off_x;
+
+        let mut label_block = format!("^XA\n^PW{}\n^LL{}\n", full_w, label_h);
+        label_block.push_str(&build_one_zpl(lx, left));
+        if let Some(r) = right {
+            label_block.push_str(&build_one_zpl(rx, r));
+        }
+        label_block.push_str(&format!("^PQ{}\n^XZ\n", count));
+        cmds.push_str(&label_block);
+
+        i += count;
+    }
+
+    cmds
 }
 
 pub fn build_tspl_label(data: &LabelData) -> String {
@@ -521,8 +662,17 @@ pub fn send_raw_to_system_printer(_printer_name: &str, _data: &[u8]) -> Result<(
 }
 
 /// Print a batch of labels (2-across) to a system printer
+/// Detects protocol from first item and uses appropriate builder (ZPL/EPL2)
 pub fn print_label_batch(items: &[LabelBatchItem], shop_name: &str, config: &PrinterConfig) -> Result<(), String> {
-    let cmd_str = build_epl2_batch(items, shop_name);
+    // Check protocol from the first item (default to EPL2)
+    let protocol = items.first()
+        .and_then(|item| item.protocol.as_deref())
+        .unwrap_or("epl");
+
+    let cmd_str = match protocol {
+        "zpl" => build_zpl_batch(items, shop_name),
+        _ => build_epl2_batch(items, shop_name),
+    };
     let bytes = cmd_str.into_bytes();
 
     match config.printer_type.as_str() {
