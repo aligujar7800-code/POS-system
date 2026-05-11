@@ -205,19 +205,25 @@ export default function SettingsPage() {
   };
 
   const testLabelPrint = async () => {
+    const port = settings.label_printer_port || settings.printer_port;
+    if (!port || port === 'none' || port.trim() === '') {
+      toast('No label printer selected! Go to Hardware settings and select a Label Printer first.', 'error');
+      return;
+    }
+    const protocol = settings.label_printer_protocol || 'epl';
     try {
-      const port = settings.label_printer_port || settings.printer_port;
       const pType = (() => {
         if (port.toUpperCase().startsWith('COM')) return 'serial';
         if (port.startsWith('usb:')) return 'usb';
         if (port.includes('.') && port.includes(':')) return 'network';
         return 'system';
       })();
+      toast(`Sending test label to "${port}" via ${protocol.toUpperCase()}...`, 'info');
       await cmd('test_label_print', {
         config: { printer_type: pType, port: port, baud_rate: parseInt(printerBaud) || 9600 },
-        protocol: settings.label_printer_protocol || 'epl'
+        protocol: protocol
       });
-      toast(`Test label sent via ${settings.label_printer_protocol || 'epl'}`, 'success');
+      toast(`Test label sent to "${port}" via ${protocol.toUpperCase()}!`, 'success');
     } catch (e: any) {
       toast('Label test failed: ' + e.toString(), 'error');
     }
@@ -883,8 +889,10 @@ export default function SettingsPage() {
                         printer_type: printerType,
                         printer_port: printerPort,
                         printer_baud: parseInt(printerBaud) || 9600,
+                        label_printer_port: settings.label_printer_port,
+                        label_printer_protocol: settings.label_printer_protocol,
                       });
-                      toast("Hardware settings saved successfully");
+                      toast(`Hardware saved! Label printer: "${settings.label_printer_port || 'Not set'}" Protocol: ${settings.label_printer_protocol}`);
                     }} 
                     className="btn-primary px-8"
                   >

@@ -60,17 +60,18 @@ pub fn build_zpl_label(data: &LabelData) -> String {
         "^XA\n\
          ^PW{w}\n\
          ^LL{h}\n\
-         {name_section}\
-         {sku_section}\
-         {price_section}\
-         ^FO10,{barcode_y}^BCN,60,Y,N,N^FD{barcode}^FS\n\
+         ^FO20,20^A0N,25,25^FD{shop}^FS\n\
+         ^FO20,55^A0N,20,20^FD{name}^FS\n\
+         ^FO20,85^A0N,18,18^FD{sku}^FS\n\
+         ^FO20,115^A0N,20,20^FDRs. {price}^FS\n\
+         ^FO20,145^BCN,50,Y,N,N^FD{barcode}^FS\n\
          ^PQ{qty}\n\
          ^XZ\n",
-        name_section = name_section,
-        sku_section = sku_section,
-        price_section = price_section,
+        shop = data.shop_name,
+        name = data.product_name,
+        sku = format!("SKU: {}", data.sku),
+        price = data.price,
         barcode = data.barcode,
-        barcode_y = barcode_y,
         qty = data.quantity,
         w = w,
         h = h
@@ -455,6 +456,11 @@ pub fn send_raw_to_system_printer(printer_name: &str, data: &[u8]) -> Result<(),
     use std::ffi::CString;
     use std::ptr;
 
+    println!("[PRINT DEBUG] ========================================");
+    println!("[PRINT DEBUG] Printer name: '{}'", printer_name);
+    println!("[PRINT DEBUG] Data size: {} bytes", data.len());
+    println!("[PRINT DEBUG] First 100 bytes: {:?}", String::from_utf8_lossy(&data[..data.len().min(100)]));
+
     #[repr(C)]
     struct DocInfoA {
         p_doc_name: *const i8,
@@ -470,6 +476,7 @@ pub fn send_raw_to_system_printer(printer_name: &str, data: &[u8]) -> Result<(),
         fn EndPagePrinter(hPrinter: usize) -> i32;
         fn EndDocPrinter(hPrinter: usize) -> i32;
         fn ClosePrinter(hPrinter: usize) -> i32;
+        fn GetLastError() -> u32;
     }
 
     let printer_cstr = CString::new(printer_name).map_err(|e| e.to_string())?;
@@ -478,8 +485,11 @@ pub fn send_raw_to_system_printer(printer_name: &str, data: &[u8]) -> Result<(),
 
     unsafe {
         let mut h_printer: usize = 0;
-        if OpenPrinterA(printer_cstr.as_ptr(), &mut h_printer, ptr::null()) == 0 {
-            return Err(format!("Failed to open printer '{}'", printer_name));
+        let open_result = OpenPrinterA(printer_cstr.as_ptr(), &mut h_printer, ptr::null());
+        println!("[PRINT DEBUG] OpenPrinterA result: {} handle: {} (0=FAIL)", open_result, h_printer);
+        if open_result == 0 {
+            let err = GetLastError();
+            return Err(format!("Failed to open printer '{}' (Win32 error: {})", printer_name, err));
         }
 
         let doc_info = DocInfoA {
@@ -488,28 +498,39 @@ pub fn send_raw_to_system_printer(printer_name: &str, data: &[u8]) -> Result<(),
             p_data_type: data_type.as_ptr(),
         };
 
-        if StartDocPrinterA(h_printer, 1, &doc_info) == 0 {
+        let start_doc_result = StartDocPrinterA(h_printer, 1, &doc_info);
+        println!("[PRINT DEBUG] StartDocPrinterA result: {} (0=FAIL)", start_doc_result);
+        if start_doc_result == 0 {
+            let err = GetLastError();
             ClosePrinter(h_printer);
-            return Err("StartDocPrinter failed".to_string());
+            return Err(format!("StartDocPrinter failed (Win32 error: {})", err));
         }
 
-        if StartPagePrinter(h_printer) == 0 {
+        let start_page_result = StartPagePrinter(h_printer);
+        println!("[PRINT DEBUG] StartPagePrinter result: {} (0=FAIL)", start_page_result);
+        if start_page_result == 0 {
+            let err = GetLastError();
             EndDocPrinter(h_printer);
             ClosePrinter(h_printer);
-            return Err("StartPagePrinter failed".to_string());
+            return Err(format!("StartPagePrinter failed (Win32 error: {})", err));
         }
 
         let mut written: u32 = 0;
-        if WritePrinter(h_printer, data.as_ptr(), data.len() as u32, &mut written) == 0 {
+        let write_result = WritePrinter(h_printer, data.as_ptr(), data.len() as u32, &mut written);
+        println!("[PRINT DEBUG] WritePrinter result: {} written: {}/{} bytes (0=FAIL)", write_result, written, data.len());
+        if write_result == 0 {
+            let err = GetLastError();
             EndPagePrinter(h_printer);
             EndDocPrinter(h_printer);
             ClosePrinter(h_printer);
-            return Err("WritePrinter failed".to_string());
+            return Err(format!("WritePrinter failed (Win32 error: {})", err));
         }
 
         EndPagePrinter(h_printer);
         EndDocPrinter(h_printer);
         ClosePrinter(h_printer);
+        println!("[PRINT DEBUG] ALL STEPS SUCCEEDED! {} bytes sent to '{}'", written, printer_name);
+        println!("[PRINT DEBUG] ========================================");
     }
 
     Ok(())
