@@ -1,11 +1,11 @@
 {
-  "version": "1.1.7",
-  "notes": "Release notes for version v1.1.7",
-  "pub_date": "2026-05-10T18:07:37.088Z",
+  "version": "1.1.8",
+  "notes": "Release notes for version v1.1.8",
+  "pub_date": "2026-05-11T20:49:45.870Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZUVLcDFlVTdueTlEVUZOYlpVdTgvdnlhdHhaL0JQRHVlazJiNE1NWVExemNWLzkzTjdpbW9pdUJUWkVtVkY3L3pTb0xXMXJvMXhWS2RLL1F1NEo2MkgvYU1NMU1sR2dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NDM2NDQ5CWZpbGU6Q2xvdGhpbmdQT1NfMS4xLjdfeDY0LXNldHVwLmV4ZQo5VHEzQUl2dTlOR1hibDBVTjdTUGkzS1l3K0dWZFRXUVdZWmM1ZmNQOVZNdit2SEhZMmFoR3llYmVwUGxzdU13clJTYVZXd3lrc1ZBMTZsVjVaYW5EQT09Cg==",
-      "url": "https://github.com/aligujar7800-code/POS-system/releases/download/v1.1.7/ClothingPOS_1.1.7_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZUVLcDFlVTdueTFFZUZGaGRXYWRycjhRRGZ5TXNXK3dhRGZ2MEdWZ3F1NFQ3TU1WYzVqQjdGQWVFOHVhUWM2NXRaTURFSk0zbGJXV2tVU2E2a1dnWGZBNjFTVDZzRmdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMyNTc5CWZpbGU6Q2xvdGhpbmdQT1NfMS4xLjhfeDY0LXNldHVwLmV4ZQo4ajlGRisrZS9CZ0FiWEhSRnRPcVpVQ1BIWWNTVENKOFkvNHkyOEg2c3FDZDlINWw1eGhBVm9jUmNaSm1kOFVMd0ZQamV4d01uNzIwd2cyU1E3THBDZz09Cg==",
+      "url": "https://github.com/aligujar7800-code/POS-system/releases/download/v1.1.8/ClothingPOS_1.1.8_x64-setup.exe"
     }
   }
 }
