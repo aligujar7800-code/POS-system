@@ -921,24 +921,38 @@ pub async fn cloud_backup_restore(
 
     let token = cloud_backup::google_auth::get_valid_token(&data_dir, user_id).await?;
 
-    // Close current DB connection to allow overwrite
     let db_path = data_dir.join("pos.db");
+    let backup_path = data_dir.join("pos_pre_restore.db");
 
-    // Create a backup of current DB first
-    let backup_current = data_dir.join("pos_pre_restore_backup.db");
-    if db_path.exists() {
+    // 1. Prepare existing DB for replacement
+    {
         let conn = db.lock();
-        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
-            .map_err(|e: rusqlite::Error| e.to_string())?;
-        drop(conn);
-        std::fs::copy(&db_path, &backup_current)
-            .map_err(|e| format!("Failed to backup current DB: {}", e))?;
+        // Force flush all data to the main file
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(FULL);");
+        // We cannot easily 'close' a connection wrapped in Arc/State while other threads might use it,
+        // but we can move it to an in-memory temp DB to free the file handle.
     }
 
-    // Download and restore
-    let restored_name = cloud_backup::drive::download_latest_backup(&token, &db_path).await?;
+    // 2. Backup current (possibly empty) DB as a safety measure
+    if db_path.exists() {
+        let _ = std::fs::copy(&db_path, &backup_path);
+    }
 
-    Ok(restored_name)
+    // 3. Download and overwrite
+    // Note: If Windows locks the file, we might need to download to a temp file first
+    let temp_download = data_dir.join("pos_restored_temp.db");
+    let restored_name = cloud_backup::drive::download_latest_backup(&token, &temp_download).await?;
+
+    // 4. Atomic Replace (or as close as possible on Windows)
+    // We notify the user that the app will restart to apply changes
+    std::fs::copy(&temp_download, &db_path).map_err(|e| format!("Failed to apply restored database: {}. Please close the app and try again.", e))?;
+    let _ = std::fs::remove_file(temp_download);
+
+    // 5. Trigger App Restart
+    // This is the only way to ensure the new DB is loaded correctly into the Rust State
+    let _ = app.restart();
+
+    Ok(format!("Successfully restored: {}. App is restarting...", restored_name))
 }
 
 /// Get offline queue status
