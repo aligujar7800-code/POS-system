@@ -921,38 +921,24 @@ pub async fn cloud_backup_restore(
 
     let token = cloud_backup::google_auth::get_valid_token(&data_dir, user_id).await?;
 
+    // Close current DB connection to allow overwrite
     let db_path = data_dir.join("pos.db");
-    let backup_path = data_dir.join("pos_pre_restore.db");
 
-    // 1. Prepare existing DB for replacement
-    {
-        let conn = db.lock();
-        // Force flush all data to the main file
-        let _ = conn.execute_batch("PRAGMA wal_checkpoint(FULL);");
-        // We cannot easily 'close' a connection wrapped in Arc/State while other threads might use it,
-        // but we can move it to an in-memory temp DB to free the file handle.
-    }
-
-    // 2. Backup current (possibly empty) DB as a safety measure
+    // Create a backup of current DB first
+    let backup_current = data_dir.join("pos_pre_restore_backup.db");
     if db_path.exists() {
-        let _ = std::fs::copy(&db_path, &backup_path);
+        let conn = db.lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
+            .map_err(|e: rusqlite::Error| e.to_string())?;
+        drop(conn);
+        std::fs::copy(&db_path, &backup_current)
+            .map_err(|e| format!("Failed to backup current DB: {}", e))?;
     }
 
-    // 3. Download and overwrite
-    // Note: If Windows locks the file, we might need to download to a temp file first
-    let temp_download = data_dir.join("pos_restored_temp.db");
-    let restored_name = cloud_backup::drive::download_latest_backup(&token, &temp_download).await?;
+    // Download and restore
+    let restored_name = cloud_backup::drive::download_latest_backup(&token, &db_path).await?;
 
-    // 4. Atomic Replace (or as close as possible on Windows)
-    // We notify the user that the app will restart to apply changes
-    std::fs::copy(&temp_download, &db_path).map_err(|e| format!("Failed to apply restored database: {}. Please close the app and try again.", e))?;
-    let _ = std::fs::remove_file(temp_download);
-
-    // 5. Trigger App Restart
-    // This is the only way to ensure the new DB is loaded correctly into the Rust State
-    let _ = app.restart();
-
-    Ok(format!("Successfully restored: {}. App is restarting...", restored_name))
+    Ok(restored_name)
 }
 
 /// Get offline queue status
@@ -1516,6 +1502,157 @@ async fn get_shopify_client(db: &State<'_, DbState>) -> Result<crate::shopify::c
     }
 
     Err("Shopify not configured. Provide either an Access Token or Client ID + Client Secret in Settings → Shopify.".into())
+}
+
+// ─── Import System ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn import_detect_schema(file_path: String, file_type: String, table_name: Option<String>) -> Result<Value, String> {
+    use crate::import::{csv_reader, excel_reader, sqlite_reader, smart_mapper};
+
+    let (columns, rows) = match file_type.as_str() {
+        "csv" => csv_reader::read_csv(&file_path)?,
+        "excel" => excel_reader::read_excel(&file_path)?,
+        "sqlite" => {
+            let tname = table_name.ok_or("Table name required for SQLite import")?;
+            sqlite_reader::read_table(&file_path, &tname)?
+        }
+        _ => return Err(format!("Unsupported file type: {}", file_type)),
+    };
+
+    // Take sample rows for detection (first 20)
+    let sample: Vec<Vec<String>> = rows.iter().take(20).cloned().collect();
+    let mappings = smart_mapper::detect_columns(&columns, &sample);
+
+    Ok(serde_json::json!({
+        "columns": columns,
+        "total_rows": rows.len(),
+        "mappings": mappings,
+    }))
+}
+
+#[tauri::command]
+pub fn import_list_tables(file_path: String) -> Result<Vec<crate::import::sqlite_reader::TableInfo>, String> {
+    crate::import::sqlite_reader::list_tables(&file_path)
+}
+
+#[tauri::command]
+pub fn import_preview_data(file_path: String, file_type: String, table_name: Option<String>, limit: Option<usize>) -> Result<Value, String> {
+    use crate::import::{csv_reader, excel_reader, sqlite_reader};
+
+    let (columns, rows) = match file_type.as_str() {
+        "csv" => csv_reader::read_csv(&file_path)?,
+        "excel" => excel_reader::read_excel(&file_path)?,
+        "sqlite" => {
+            let tname = table_name.ok_or("Table name required")?;
+            sqlite_reader::read_table(&file_path, &tname)?
+        }
+        _ => return Err(format!("Unsupported file type: {}", file_type)),
+    };
+
+    let max = limit.unwrap_or(50).min(100);
+    let preview: Vec<Vec<String>> = rows.iter().take(max).cloned().collect();
+
+    Ok(serde_json::json!({
+        "columns": columns,
+        "total_rows": rows.len(),
+        "preview_rows": preview,
+    }))
+}
+
+#[tauri::command]
+pub fn import_validate(
+    file_path: String,
+    file_type: String,
+    table_name: Option<String>,
+    config: crate::import::import_engine::ImportConfig,
+) -> Result<Value, String> {
+    use crate::import::{csv_reader, excel_reader, sqlite_reader, import_engine};
+
+    let (columns, rows) = match file_type.as_str() {
+        "csv" => csv_reader::read_csv(&file_path)?,
+        "excel" => excel_reader::read_excel(&file_path)?,
+        "sqlite" => {
+            let tname = table_name.ok_or("Table name required")?;
+            sqlite_reader::read_table(&file_path, &tname)?
+        }
+        _ => return Err(format!("Unsupported: {}", file_type)),
+    };
+
+    let errors = import_engine::validate_rows(&columns, &rows, &config);
+
+    Ok(serde_json::json!({
+        "total_rows": rows.len(),
+        "error_count": errors.len(),
+        "errors": errors,
+        "is_valid": errors.is_empty(),
+    }))
+}
+
+#[tauri::command]
+pub fn import_execute(
+    db: State<DbState>,
+    file_path: String,
+    file_type: String,
+    table_name: Option<String>,
+    config: crate::import::import_engine::ImportConfig,
+) -> Result<Value, String> {
+    use crate::import::{csv_reader, excel_reader, sqlite_reader, import_engine};
+
+    let (columns, rows) = match file_type.as_str() {
+        "csv" => csv_reader::read_csv(&file_path)?,
+        "excel" => excel_reader::read_excel(&file_path)?,
+        "sqlite" => {
+            let tname = table_name.ok_or("Table name required")?;
+            sqlite_reader::read_table(&file_path, &tname)?
+        }
+        _ => return Err(format!("Unsupported: {}", file_type)),
+    };
+
+    let conn = db.lock();
+    let result = import_engine::execute_import(&conn, &columns, &rows, &config)?;
+
+    Ok(serde_json::json!({
+        "total_rows": result.total_rows,
+        "imported": result.imported,
+        "skipped": result.skipped,
+        "errors": result.errors,
+        "error_details": result.error_details,
+        "batch_id": result.import_batch_id,
+    }))
+}
+
+#[tauri::command]
+pub fn import_rollback(db: State<DbState>, batch_id: String) -> Result<usize, String> {
+    let conn = db.lock();
+    crate::import::import_engine::rollback_import(&conn, &batch_id)
+}
+
+#[tauri::command]
+pub fn import_history(db: State<DbState>) -> Result<Vec<Value>, String> {
+    let conn = db.lock();
+    let mut stmt = conn.prepare(
+        "SELECT batch_id, source_type, source_name, total_rows, imported_count, skipped_count, error_count, status, created_at
+         FROM import_history ORDER BY created_at DESC LIMIT 20"
+    ).map_err(|e| e.to_string())?;
+
+    let rows: Vec<Value> = stmt.query_map([], |row| {
+        Ok(serde_json::json!({
+            "batch_id": row.get::<_, String>(0)?,
+            "source_type": row.get::<_, String>(1)?,
+            "source_name": row.get::<_, Option<String>>(2)?,
+            "total_rows": row.get::<_, i64>(3)?,
+            "imported": row.get::<_, i64>(4)?,
+            "skipped": row.get::<_, i64>(5)?,
+            "errors": row.get::<_, i64>(6)?,
+            "status": row.get::<_, String>(7)?,
+            "created_at": row.get::<_, String>(8)?,
+        }))
+    }).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+
+    Ok(rows)
 }
 
 /// Initialize database — called at app start

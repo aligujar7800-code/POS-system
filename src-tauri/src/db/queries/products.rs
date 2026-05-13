@@ -84,18 +84,27 @@ pub fn get_all_products(conn: &Connection) -> Result<Vec<Product>> {
 }
 
 pub fn get_product_by_barcode(conn: &Connection, barcode: &str) -> Result<Option<Product>> {
-    // ... logic remains same ...
+    // 1. Try product-level barcode
     let sql = product_select_sql() + " WHERE p.is_active = 1 AND p.barcode = ?1 LIMIT 1";
     let result = conn.query_row(&sql, params![barcode], map_product);
     match result {
         Ok(p) => Ok(Some(p)),
         Err(rusqlite::Error::QueryReturnedNoRows) => {
-            // Try variant barcode
+            // 2. Try variant barcode
             let sql2 = product_select_sql()
                 + " WHERE p.is_active = 1 AND EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.variant_barcode = ?1) LIMIT 1";
             match conn.query_row(&sql2, params![barcode], map_product) {
                 Ok(p) => Ok(Some(p)),
-                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    // 3. Try legacy barcode (imported from old POS)
+                    let sql3 = product_select_sql()
+                        + " WHERE p.is_active = 1 AND EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.legacy_barcode = ?1) LIMIT 1";
+                    match conn.query_row(&sql3, params![barcode], map_product) {
+                        Ok(p) => Ok(Some(p)),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                        Err(e) => Err(e),
+                    }
+                }
                 Err(e) => Err(e),
             }
         }

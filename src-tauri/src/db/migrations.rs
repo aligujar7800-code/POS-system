@@ -95,6 +95,11 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_version VALUES (15)", [])?;
     }
 
+    if current_version < 16 {
+        let _ = conn.execute_batch(MIGRATION_V16);
+        conn.execute("INSERT INTO schema_version VALUES (16)", [])?;
+    }
+
     Ok(())
 }
 
@@ -567,4 +572,26 @@ CREATE TABLE IF NOT EXISTS shopify_sync_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shopify_queue_status ON shopify_sync_queue(status);
+";
+
+const MIGRATION_V16: &str = "
+-- Import history for tracking and rollback
+CREATE TABLE IF NOT EXISTS import_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id        TEXT NOT NULL UNIQUE,
+    source_type     TEXT NOT NULL,
+    source_name     TEXT,
+    total_rows      INTEGER NOT NULL DEFAULT 0,
+    imported_count  INTEGER NOT NULL DEFAULT 0,
+    skipped_count   INTEGER NOT NULL DEFAULT 0,
+    error_count     INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_import_batch ON import_history(batch_id);
+
+-- Add legacy_barcode to product_variants for preserving old POS barcodes
+ALTER TABLE product_variants ADD COLUMN legacy_barcode TEXT;
+CREATE INDEX IF NOT EXISTS idx_variants_legacy_barcode ON product_variants(legacy_barcode);
 ";

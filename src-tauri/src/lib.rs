@@ -3,6 +3,7 @@ mod db;
 mod hardware;
 mod shopify;
 mod cloud_backup;
+mod import;
 
 use commands::*;
 use parking_lot::Mutex;
@@ -169,6 +170,14 @@ pub fn run() {
             shopify_get_pending_syncs,
             shopify_retry_pending,
             shopify_clear_done_syncs,
+            // Import System
+            import_detect_schema,
+            import_list_tables,
+            import_preview_data,
+            import_validate,
+            import_execute,
+            import_rollback,
+            import_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,10 +6,11 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toaster';
-import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck } from 'lucide-react';
+import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine } from 'lucide-react';
+import ImportWizard from '../components/ImportWizard';
 import { save } from '@tauri-apps/plugin-dialog';
 
-type Tab = 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'language' | 'license';
+type Tab = 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'import' | 'language' | 'license';
 type IntegrationView = 'list' | 'shopify' | 'google';
 
 interface BackupEntry { id: string; name: string; size: string; created_time: string; }
@@ -465,6 +466,7 @@ export default function SettingsPage() {
     ['users', t('settings.users'), <Users className="w-4 h-4" />],
     ['hardware', t('settings.hardware'), <Printer className="w-4 h-4" />],
     ['integrations', 'Integrations', <ShoppingBag className="w-4 h-4" />],
+    ['import', 'Data Import', <ArrowDownToLine className="w-4 h-4" />],
     ['language', t('settings.language'), <Globe className="w-4 h-4" />],
     ['license', 'License', <ShieldCheck className="w-4 h-4" />],
   ];
@@ -1745,6 +1747,14 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+
+          {/* Data Import Tab */}
+          {tab === 'import' && (
+            <div className="max-w-3xl">
+              <ImportWizard />
             </div>
           )}
 
