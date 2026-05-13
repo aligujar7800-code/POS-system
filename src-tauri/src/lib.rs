@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod hardware;
 mod shopify;
+mod cloud_backup;
 
 use commands::*;
 use parking_lot::Mutex;
@@ -17,11 +18,26 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let conn = commands::init_db(&app.handle())
                 .expect("Failed to initialize database");
             let db_state: DbState = Arc::new(Mutex::new(conn));
-            app.manage(db_state);
+            app.manage(db_state.clone());
+
+            // Initialize cloud backup scheduler
+            let data_dir = app.handle()
+                .path()
+                .app_data_dir()
+                .expect("Failed to get app data dir");
+
+            let scheduler = Arc::new(cloud_backup::scheduler::BackupScheduler::new(data_dir.clone()));
+            cloud_backup::scheduler::load_scheduler_settings(&scheduler, &data_dir);
+            app.manage(scheduler.clone());
+
+            // Start background scheduler
+            cloud_backup::scheduler::start_scheduler(scheduler, db_state);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -117,6 +133,18 @@ pub fn run() {
             // Backup
             backup_database,
             get_db_path,
+            // Cloud Backup
+            cloud_backup_connect,
+            cloud_backup_disconnect,
+            cloud_backup_get_account,
+            cloud_backup_now,
+            cloud_backup_list,
+            cloud_backup_storage,
+            cloud_backup_set_interval,
+            cloud_backup_get_interval,
+            cloud_backup_last_time,
+            cloud_backup_restore,
+            cloud_backup_queue_status,
             // Accounting
             get_all_accounts,
             create_account_entry,

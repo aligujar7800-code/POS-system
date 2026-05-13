@@ -37,4 +37,14 @@ lettre = { version = "0.11", features = ["rustls-tls"] }
 reqwest = { version = "0.12", features = ["json"] }
 escposify = "0.6.2"
 printers = "2.3.0"
+tokio = { version = "1", features = ["full"] }
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+base64 = "0.22"
+aes-gcm = "0.10"
+rand = "0.8"
+tiny_http = "0.12"
+dotenvy = "0.15"
+url = "2"
+tauri-plugin-notification = "2"
+open = "5"
 

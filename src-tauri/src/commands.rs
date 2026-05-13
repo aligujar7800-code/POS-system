@@ -1,5 +1,6 @@
 use crate::db::{migrations, queries::*};
 use crate::hardware::{detection, label, printer};
+use crate::cloud_backup;
 use parking_lot::Mutex;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -714,6 +715,247 @@ pub fn get_db_path(app: tauri::AppHandle) -> Result<String, String> {
         .app_data_dir()
         .map_err(|e: tauri::Error| e.to_string())?;
     Ok(data_dir.join("pos.db").to_string_lossy().to_string())
+}
+
+// ─── Cloud Backup ────────────────────────────────────────────────────────────
+
+/// Start Google OAuth flow — opens browser, returns connected account info
+#[tauri::command]
+pub async fn cloud_backup_connect(
+    app: tauri::AppHandle,
+    user_id: i64,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let token = cloud_backup::google_auth::start_oauth_flow().await?;
+
+    // Store encrypted token for this user
+    cloud_backup::google_auth::store_token(&data_dir, user_id, &token)?;
+
+    Ok(serde_json::json!({
+        "email": token.email,
+        "name": token.name,
+        "picture": token.picture,
+    }))
+}
+
+/// Disconnect Google account for a user
+#[tauri::command]
+pub fn cloud_backup_disconnect(
+    app: tauri::AppHandle,
+    user_id: i64,
+) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    cloud_backup::google_auth::remove_token(&data_dir, user_id)
+}
+
+/// Get connected Google account info for a user
+#[tauri::command]
+pub async fn cloud_backup_get_account(
+    app: tauri::AppHandle,
+    user_id: i64,
+) -> Result<Option<serde_json::Value>, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    match cloud_backup::google_auth::get_token(&data_dir, user_id)? {
+        Some(token) => Ok(Some(serde_json::json!({
+            "email": token.email,
+            "name": token.name,
+            "picture": token.picture,
+        }))),
+        None => Ok(None),
+    }
+}
+
+/// Trigger a manual backup to Google Drive
+#[tauri::command]
+pub async fn cloud_backup_now(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    user_id: i64,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    // Flush WAL first
+    {
+        let conn = db.lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
+            .map_err(|e: rusqlite::Error| e.to_string())?;
+    }
+
+    // Check internet
+    if !cloud_backup::queue::check_internet().await {
+        // Queue for later
+        cloud_backup::queue::enqueue_backup(&data_dir, user_id)?;
+        return Err("No internet connection. Backup queued for when connectivity is restored.".into());
+    }
+
+    match cloud_backup::drive::perform_full_backup(&data_dir, user_id).await {
+        Ok(result) => {
+            // Update scheduler's last backup time
+            if let Some(scheduler) = app.try_state::<std::sync::Arc<cloud_backup::scheduler::BackupScheduler>>() {
+                scheduler.record_backup(user_id);
+            }
+
+            Ok(serde_json::json!({
+                "success": true,
+                "file_name": result.file_name,
+                "file_id": result.file_id,
+                "size_bytes": result.size_bytes,
+                "timestamp": result.timestamp,
+            }))
+        }
+        Err(e) => {
+            // Queue for retry
+            let _ = cloud_backup::queue::enqueue_backup(&data_dir, user_id);
+            Err(e)
+        }
+    }
+}
+
+/// List all backups in Google Drive
+#[tauri::command]
+pub async fn cloud_backup_list(
+    app: tauri::AppHandle,
+    user_id: i64,
+) -> Result<Vec<cloud_backup::drive::BackupEntry>, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let token = cloud_backup::google_auth::get_valid_token(&data_dir, user_id).await?;
+    cloud_backup::drive::list_backups(&token).await
+}
+
+/// Get Google Drive storage info
+#[tauri::command]
+pub async fn cloud_backup_storage(
+    app: tauri::AppHandle,
+    user_id: i64,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let token = cloud_backup::google_auth::get_valid_token(&data_dir, user_id).await?;
+    let info = cloud_backup::drive::get_storage_info(&token).await?;
+
+    Ok(serde_json::json!({
+        "limit": info.limit,
+        "usage": info.usage,
+        "usage_in_drive": info.usage_in_drive,
+    }))
+}
+
+/// Set backup interval for a user
+#[tauri::command]
+pub fn cloud_backup_set_interval(
+    app: tauri::AppHandle,
+    user_id: i64,
+    hours: u64,
+) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    if let Some(scheduler) = app.try_state::<std::sync::Arc<cloud_backup::scheduler::BackupScheduler>>() {
+        scheduler.set_interval(user_id, hours);
+        cloud_backup::scheduler::save_scheduler_settings(&scheduler, &data_dir)?;
+    }
+    Ok(())
+}
+
+/// Get backup interval for a user
+#[tauri::command]
+pub fn cloud_backup_get_interval(
+    app: tauri::AppHandle,
+    user_id: i64,
+) -> Result<u64, String> {
+    if let Some(scheduler) = app.try_state::<std::sync::Arc<cloud_backup::scheduler::BackupScheduler>>() {
+        Ok(scheduler.get_interval(user_id))
+    } else {
+        Ok(6) // default
+    }
+}
+
+/// Get last backup time for a user
+#[tauri::command]
+pub fn cloud_backup_last_time(
+    app: tauri::AppHandle,
+    user_id: i64,
+) -> Result<Option<i64>, String> {
+    if let Some(scheduler) = app.try_state::<std::sync::Arc<cloud_backup::scheduler::BackupScheduler>>() {
+        Ok(scheduler.get_last_backup(user_id))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Restore database from the latest cloud backup
+#[tauri::command]
+pub async fn cloud_backup_restore(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    user_id: i64,
+) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let token = cloud_backup::google_auth::get_valid_token(&data_dir, user_id).await?;
+
+    // Close current DB connection to allow overwrite
+    let db_path = data_dir.join("pos.db");
+
+    // Create a backup of current DB first
+    let backup_current = data_dir.join("pos_pre_restore_backup.db");
+    if db_path.exists() {
+        let conn = db.lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
+            .map_err(|e: rusqlite::Error| e.to_string())?;
+        drop(conn);
+        std::fs::copy(&db_path, &backup_current)
+            .map_err(|e| format!("Failed to backup current DB: {}", e))?;
+    }
+
+    // Download and restore
+    let restored_name = cloud_backup::drive::download_latest_backup(&token, &db_path).await?;
+
+    Ok(restored_name)
+}
+
+/// Get offline queue status
+#[tauri::command]
+pub fn cloud_backup_queue_status(
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let queue = cloud_backup::queue::load_queue(&data_dir);
+    Ok(serde_json::json!({
+        "count": queue.len(),
+        "items": queue,
+    }))
 }
 
 // ─── Suppliers ──────────────────────────────────────────────────────────────
