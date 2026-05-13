@@ -1828,8 +1828,13 @@ export default function SettingsPage() {
                     <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Expiration Date</label>
                       <p className="text-sm font-bold text-slate-700">
-                        {licenseInfo?.expires_at ? new Date(licenseInfo.expires_at).toLocaleDateString() : 'Lifetime Access'}
+                        {licenseInfo?.expiry_date ? new Date(licenseInfo.expiry_date).toLocaleDateString() : 'Lifetime Access'}
                       </p>
+                      {licenseInfo?.days_remaining !== undefined && (
+                        <p className={`text-[10px] font-bold mt-1 ${licenseInfo.days_remaining <= 5 ? 'text-red-500' : 'text-brand-600'}`}>
+                          {licenseInfo.days_remaining} Days Remaining
+                        </p>
+                      )}
                     </div>
                   </div>
 
