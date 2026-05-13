@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toaster';
-import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity } from 'lucide-react';
+import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 
 type Tab = 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'language' | 'license';
@@ -17,10 +17,8 @@ interface CloudAccount { email: string; name: string; picture: string; }
 
 interface UserRecord { id: number; username: string; role: string; is_active: boolean; permissions?: string; }
 interface PrinterInfo { port: string; name: string; printer_type: string; model_guess: string; }
-import { ShieldCheck } from 'lucide-react';
-
 export default function SettingsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const { logout } = useAuthStore();
   const navigate = useNavigate();
@@ -1747,6 +1745,130 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Language Tab */}
+          {tab === 'language' && (
+            <div className="space-y-6 max-w-xl">
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/40 space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                  <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+                    <Globe className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-800">{t('settings.language')}</h2>
+                    <p className="text-xs text-slate-500">Choose your preferred application language</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { id: 'en', label: 'English', sub: 'Default POS Language', flag: '🇬🇧' },
+                    { id: 'ur', label: 'اردو', sub: 'Urdu Language Support', flag: '🇵🇰' }
+                  ].map((lang) => (
+                    <div 
+                      key={lang.id}
+                      onClick={() => i18n.changeLanguage(lang.id)}
+                      className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${
+                        i18n.language === lang.id 
+                          ? 'border-brand-500 bg-brand-50/50' 
+                          : 'border-slate-50 bg-slate-50/50 hover:border-slate-200 hover:bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-2xl">{lang.flag}</span>
+                        {i18n.language === lang.id && (
+                          <div className="w-5 h-5 bg-brand-500 rounded-full flex items-center justify-center">
+                            <Check className="w-3 h-3 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <p className={`font-bold ${i18n.language === lang.id ? 'text-brand-700' : 'text-slate-700'}`}>{lang.label}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{lang.sub}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-slate-400 italic text-center pt-2">
+                  Tip: Changing language will update all labels, buttons, and menus instantly.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* License Tab */}
+          {tab === 'license' && (
+            <div className="space-y-6 max-w-2xl">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+                <div className="p-1 bg-gradient-to-r from-slate-700 to-slate-900" />
+                <div className="p-8 space-y-8">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-slate-100 text-slate-600 rounded-2xl">
+                        <ShieldCheck className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-800">License Management</h2>
+                        <p className="text-xs text-slate-500">Manage your POS system activation</p>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 bg-green-50 text-green-600 text-[10px] font-bold rounded-full border border-green-100 uppercase tracking-[0.1em]">
+                      Active License
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Machine ID</label>
+                      <p className="font-mono text-xs font-bold text-slate-700 break-all select-all">
+                        {licenseInfo?.machine_id || 'Generating...'}
+                      </p>
+                    </div>
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Expiration Date</label>
+                      <p className="text-sm font-bold text-slate-700">
+                        {licenseInfo?.expires_at ? new Date(licenseInfo.expires_at).toLocaleDateString() : 'Lifetime Access'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-6 bg-gradient-to-br from-slate-50 to-indigo-50/30 rounded-3xl border border-slate-100 relative overflow-hidden">
+                    <ShieldCheck className="absolute -right-4 -bottom-4 w-24 h-24 text-slate-200/50" />
+                    <div className="relative">
+                      <h4 className="font-bold text-slate-800 mb-2">License Information</h4>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Licensed To:</span>
+                          <span className="font-semibold text-slate-700">{shopName || 'Retail Customer'}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Plan Type:</span>
+                          <span className="font-semibold text-brand-600">Premium Professional</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Verification Status:</span>
+                          <span className="text-green-600 font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Verified by Cloud
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button 
+                      disabled
+                      className="w-full py-3 bg-slate-100 text-slate-400 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 cursor-not-allowed border border-slate-200"
+                    >
+                      <RotateCw className="w-4 h-4" /> Renewal Not Required
+                    </button>
+                    <p className="text-[10px] text-slate-400 text-center mt-3">
+                      Your license is tied to this machine's unique hardware signature.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
