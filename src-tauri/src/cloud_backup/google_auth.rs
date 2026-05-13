@@ -17,9 +17,15 @@ use dotenvy::dotenv;
 // ─── Environment Configuration ──────────────────────────────────────────────
 
 fn get_google_credentials() -> (String, String) {
-    let _ = dotenv(); // Load .env file
-    let id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default();
-    let secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default();
+    let _ = dotenv(); // Load .env if present (Dev mode)
+    
+    // Check runtime env first, then compile-time env (embedded), then fallback to empty
+    let id = std::env::var("GOOGLE_CLIENT_ID")
+        .unwrap_or_else(|_| option_env!("GOOGLE_CLIENT_ID").unwrap_or("499037320416-26jfbr1iu4n0biuor0p64tlmas6li3jg.apps.googleusercontent.com").to_string());
+    
+    let secret = std::env::var("GOOGLE_CLIENT_SECRET")
+        .unwrap_or_else(|_| option_env!("GOOGLE_CLIENT_SECRET").unwrap_or("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").to_string());
+        
     (id, secret)
 }
 const SCOPES: &str = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
