@@ -16,7 +16,19 @@ import hblLogo from '../assets/hbl.png';
 import stripeLogo from '../assets/stripe.png';
 
 type Tab = 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license';
-type IntegrationView = 'list' | 'shopify' | 'google';
+type IntegrationView = 'list' | 'shopify' | 'google' | 'cloudsync';
+
+interface CloudSyncStatus {
+  connected: boolean;
+  store_id?: string;
+  owner_email?: string;
+  store_name?: string;
+  connected_at?: string;
+  last_sync?: string;
+  queue_count?: number;
+  account_name?: string;
+  account_picture?: string;
+}
 
 interface BackupEntry { id: string; name: string; size: string; created_time: string; }
 interface CloudAccount { email: string; name: string; picture: string; }
@@ -100,6 +112,12 @@ export default function SettingsPage() {
   const [cloudLoadingBackups, setCloudLoadingBackups] = useState(false);
   const [cloudQueueCount, setCloudQueueCount] = useState(0);
 
+  // Cloud Sync (Supabase) state
+  const [syncStatus, setSyncStatus] = useState<CloudSyncStatus | null>(null);
+  const [syncConnecting, setSyncConnecting] = useState(false);
+  const [syncSyncing, setSyncSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
+
   const permissionModules = [
     { id: 'sales', label: 'Sales' },
     { id: 'inventory', label: 'Inventory' },
@@ -178,9 +196,62 @@ export default function SettingsPage() {
     }
   }, [currentUser]);
 
+  // Load Cloud Sync status
+  const loadSyncStatus = useCallback(async () => {
+    try {
+      const status = await cmd<CloudSyncStatus>('cloud_sync_status');
+      setSyncStatus(status);
+    } catch (e) {
+      console.warn('Failed to load cloud sync status:', e);
+    }
+  }, []);
+
   useEffect(() => {
-    if (tab === 'integrations' && integrationView === 'google') loadCloudData();
-  }, [tab, integrationView, loadCloudData]);
+    if (tab === 'integrations') {
+      loadSyncStatus(); // pre-load sync status for card badge
+      if (integrationView === 'google') loadCloudData();
+      if (integrationView === 'cloudsync') loadSyncStatus();
+    }
+  }, [tab, integrationView, loadCloudData, loadSyncStatus]);
+
+  const connectCloudSync = async () => {
+    setSyncConnecting(true);
+    try {
+      const result = await cmd<any>('cloud_sync_connect');
+      toast(`Cloud Sync connected! Store: ${result.store_name}`, 'success');
+      loadSyncStatus();
+    } catch (e: any) {
+      toast('Cloud Sync connection failed: ' + e.toString(), 'error');
+    } finally {
+      setSyncConnecting(false);
+    }
+  };
+
+  const disconnectCloudSync = async () => {
+    if (!window.confirm('Disconnect Cloud Sync? Your data will stop syncing to the cloud.')) return;
+    try {
+      await cmd('cloud_sync_disconnect');
+      setSyncStatus({ connected: false });
+      toast('Cloud Sync disconnected', 'success');
+    } catch (e: any) {
+      toast(e.toString(), 'error');
+    }
+  };
+
+  const triggerManualSync = async () => {
+    setSyncSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await cmd<any>('cloud_sync_now');
+      setSyncResult(result);
+      toast(`Sync complete! ${result.sales_synced} sales, ${result.customers_synced} customers synced`, 'success');
+      loadSyncStatus();
+    } catch (e: any) {
+      toast('Sync failed: ' + e.toString(), 'error');
+    } finally {
+      setSyncSyncing(false);
+    }
+  };
 
   const connectGmail = async () => {
     if (!currentUser) return;
@@ -1214,6 +1285,37 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   </div>
+                  {/* Cloud Sync Card */}
+                  <div 
+                    onClick={() => setIntegrationView('cloudsync')}
+                    className="group relative overflow-hidden bg-white rounded-3xl border border-slate-200 p-8 cursor-pointer transition-all hover:border-purple-300 hover:shadow-2xl hover:shadow-purple-100/50"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
+                    <div className="relative">
+                      <div className="w-16 h-16 mb-6 rounded-2xl bg-white shadow-lg flex items-center justify-center border border-slate-100">
+                        <svg className="w-10 h-10" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M12 2L2 7l10 5 10-5-10-5z" fill="#8B5CF6" opacity="0.8"/>
+                          <path d="M2 17l10 5 10-5" stroke="#8B5CF6" strokeWidth="2" fill="none"/>
+                          <path d="M2 12l10 5 10-5" stroke="#A78BFA" strokeWidth="2" fill="none"/>
+                        </svg>
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800 mb-2">Cloud Sync</h3>
+                      <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                        Real-time sync to Supabase cloud. View live sales, customers & reports from your mobile app.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        {syncStatus?.connected ? (
+                          <span className="flex items-center gap-1.5 text-green-600 font-bold text-xs uppercase tracking-wider">
+                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> Connected
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2 text-purple-600 font-bold text-xs uppercase tracking-wider">
+                            Configure Sync <Plus className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1797,6 +1899,177 @@ export default function SettingsPage() {
                         </p>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Cloud Sync Inner View */}
+              {integrationView === 'cloudsync' && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                  <div className="space-y-6 max-w-2xl">
+
+                    {/* Connection Card */}
+                    <div className="card p-6">
+                      <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-5">
+                        <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                          <Cloud className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h2 className="font-semibold text-slate-800">Cloud Sync — Supabase</h2>
+                          <p className="text-sm text-slate-500">Real-time data sync for your mobile dashboard</p>
+                        </div>
+                      </div>
+
+                      {!syncStatus?.connected ? (
+                        <div className="text-center py-8">
+                          <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-gradient-to-br from-purple-100 to-indigo-100 flex items-center justify-center">
+                            <CloudUpload className="w-10 h-10 text-purple-600" />
+                          </div>
+                          <h3 className="font-semibold text-slate-700 mb-1">Connect Cloud Sync</h3>
+                          <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">
+                            Sign in with your Google account to link your store. Your sales, customers, and daily reports will sync automatically to the cloud.
+                          </p>
+                          <button
+                            onClick={connectCloudSync}
+                            disabled={syncConnecting}
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-medium text-sm hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg shadow-purple-200"
+                          >
+                            {syncConnecting ? (
+                              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Connecting...</>
+                            ) : (
+                              <><svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff" opacity=".7"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#fff" opacity=".5"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff" opacity=".9"/></svg> Sign in with Google</>
+                            )}
+                          </button>
+                          <p className="text-[11px] text-slate-400 mt-4">
+                            One Gmail = One Store. If you reconnect with the same Gmail, your existing store data will be used.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-5">
+                          {/* Connected Account */}
+                          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-100">
+                            <div className="flex items-center gap-3">
+                              {syncStatus.account_picture ? (
+                                <img src={syncStatus.account_picture} alt="" className="w-10 h-10 rounded-full border-2 border-white shadow-sm" />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-purple-200 flex items-center justify-center text-purple-700 font-bold text-sm">
+                                  {syncStatus.account_name?.charAt(0) || syncStatus.owner_email?.charAt(0) || '?'}
+                                </div>
+                              )}
+                              <div>
+                                <p className="font-medium text-slate-700 text-sm">{syncStatus.account_name || syncStatus.owner_email}</p>
+                                <p className="text-xs text-slate-500">{syncStatus.owner_email}</p>
+                              </div>
+                              <span className="ml-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live
+                              </span>
+                            </div>
+                            <button onClick={disconnectCloudSync} className="text-xs text-red-500 hover:text-red-700 hover:underline flex items-center gap-1">
+                              <Unplug className="w-3.5 h-3.5" /> Disconnect
+                            </button>
+                          </div>
+
+                          {/* Store Info + Stats */}
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                              <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-2">
+                                <Store className="w-3.5 h-3.5" /> Store Name
+                              </label>
+                              <p className="text-sm font-bold text-slate-700 truncate">{syncStatus.store_name}</p>
+                            </div>
+                            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                              <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-2">
+                                <Clock className="w-3.5 h-3.5" /> Last Sync
+                              </label>
+                              <p className="text-sm font-medium text-slate-700">
+                                {syncStatus.last_sync 
+                                  ? new Date(syncStatus.last_sync).toLocaleString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' })
+                                  : 'Not yet'}
+                              </p>
+                            </div>
+                            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                              <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-2">
+                                <Database className="w-3.5 h-3.5" /> Store ID
+                              </label>
+                              <p className="text-[10px] font-mono text-slate-500 truncate" title={syncStatus.store_id}>
+                                {syncStatus.store_id?.substring(0, 8)}...
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Queue Status */}
+                          {(syncStatus.queue_count || 0) > 0 && (
+                            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-sm">
+                              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                              <span className="font-medium">{syncStatus.queue_count} item(s) pending in offline queue</span>
+                              <span className="text-xs text-amber-500">(will auto-sync when online)</span>
+                            </div>
+                          )}
+
+                          {/* Sync Result */}
+                          {syncResult && (
+                            <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
+                              <p className="text-sm font-semibold text-green-700 flex items-center gap-2 mb-2">
+                                <Check className="w-4 h-4" /> Sync Complete
+                              </p>
+                              <div className="grid grid-cols-3 gap-3 text-xs">
+                                <div className="text-center p-2 bg-white rounded-lg">
+                                  <p className="text-lg font-bold text-green-700">{syncResult.sales_synced}</p>
+                                  <p className="text-green-600 font-medium">Sales</p>
+                                </div>
+                                <div className="text-center p-2 bg-white rounded-lg">
+                                  <p className="text-lg font-bold text-green-700">{syncResult.customers_synced}</p>
+                                  <p className="text-green-600 font-medium">Customers</p>
+                                </div>
+                                <div className="text-center p-2 bg-white rounded-lg">
+                                  <p className="text-lg font-bold text-green-700">{syncResult.queue_processed}</p>
+                                  <p className="text-green-600 font-medium">Queue</p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Button */}
+                          <button
+                            onClick={triggerManualSync}
+                            disabled={syncSyncing}
+                            className="w-full py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg shadow-purple-200 disabled:opacity-60"
+                          >
+                            {syncSyncing ? (
+                              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Syncing...</>
+                            ) : (
+                              <><RefreshCw className="w-4 h-4" /> Sync Now</>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* How it Works */}
+                    <div className="card p-6 bg-purple-50/50 border-purple-100">
+                      <h3 className="font-semibold text-purple-800 text-sm mb-3 flex items-center gap-2">
+                        <Activity className="w-4 h-4" /> How Cloud Sync Works
+                      </h3>
+                      <div className="space-y-3 text-xs text-purple-700">
+                        <div className="flex items-start gap-2">
+                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</span>
+                          <span><strong>Auto Sale Sync</strong> — Every completed sale is automatically uploaded to the cloud with store_id tagging</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</span>
+                          <span><strong>Customer Tracking</strong> — Customer visit counts and data sync in real-time</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</span>
+                          <span><strong>Daily Reports</strong> — Summary with profit, top products, and customer count pushed at midnight</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">4</span>
+                          <span><strong>Offline Queue</strong> — If internet drops, data queues locally and auto-uploads when back online</span>
+                        </div>
+                      </div>
+                    </div>
+
                   </div>
                 </div>
               )}

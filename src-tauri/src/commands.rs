@@ -1,6 +1,7 @@
 use crate::db::{migrations, queries::*};
 use crate::hardware::{detection, label, printer};
 use crate::cloud_backup;
+use crate::cloud_sync;
 use parking_lot::Mutex;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -334,11 +335,27 @@ pub fn get_inward_history(db: State<DbState>) -> Result<Vec<products::InwardHist
 
 #[tauri::command]
 pub fn create_sale(
+    app: tauri::AppHandle,
     db: State<DbState>,
     payload: sales::CreateSalePayload,
 ) -> Result<(i64, String), String> {
     let mut conn = db.lock();
-    sales::create_sale(&mut *conn, &payload).map_err(|e| e.to_string())
+    let result = sales::create_sale(&mut *conn, &payload).map_err(|e| e.to_string())?;
+    let sale_id = result.0;
+    drop(conn);
+
+    // Fire-and-forget cloud sync to Supabase
+    let db_arc = db.inner().clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Ok(data_dir) = app_handle.path().app_data_dir() {
+            if let Err(e) = cloud_sync::sync_sale_background(&data_dir, &db_arc, sale_id).await {
+                eprintln!("[CloudSync] Background sale sync error: {}", e);
+            }
+        }
+    });
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -956,6 +973,122 @@ pub fn cloud_backup_queue_status(
         "count": queue.len(),
         "items": queue,
     }))
+}
+
+// ─── Cloud Sync (Supabase) ───────────────────────────────────────────────────
+
+/// Connect cloud sync: Google OAuth → get email → find/create store in Supabase
+#[tauri::command]
+pub async fn cloud_sync_connect(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    // Get shop name from settings
+    let store_name = {
+        let conn = db.lock();
+        settings::get_all_settings(&conn)
+            .ok()
+            .and_then(|s| s.get("shop_name").cloned())
+            .unwrap_or_else(|| "My Store".to_string())
+    };
+
+    // Start Google OAuth to get email
+    let token = cloud_backup::google_auth::start_oauth_flow().await?;
+    let email = token.email.clone();
+    let name = token.name.clone();
+    let picture = token.picture.clone();
+
+    // Find or create store in Supabase
+    let store = cloud_sync::supabase::find_or_create_store(&email, &store_name).await?;
+
+    // Save encrypted config locally
+    let config = cloud_sync::config::CloudSyncConfig {
+        store_id: store.id.clone(),
+        owner_email: email.clone(),
+        store_name: store.store_name.clone(),
+        connected_at: chrono::Utc::now().to_rfc3339(),
+        last_sync: None,
+        last_daily_summary_date: None,
+    };
+    cloud_sync::config::save_sync_config(&data_dir, &config)?;
+
+    // Also store the Google token for future use (reuse cloud_backup storage)
+    // Use user_id = 0 as a special "cloud sync" slot
+    cloud_backup::google_auth::store_token(&data_dir, 0, &token)?;
+
+    Ok(serde_json::json!({
+        "store_id": store.id,
+        "email": email,
+        "name": name,
+        "picture": picture,
+        "store_name": store.store_name,
+    }))
+}
+
+/// Disconnect cloud sync
+#[tauri::command]
+pub fn cloud_sync_disconnect(app: tauri::AppHandle) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+    cloud_sync::config::remove_sync_config(&data_dir)?;
+    // Also remove the Google token for cloud sync slot
+    let _ = cloud_backup::google_auth::remove_token(&data_dir, 0);
+    Ok(())
+}
+
+/// Get cloud sync status
+#[tauri::command]
+pub fn cloud_sync_status(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    match cloud_sync::config::load_sync_config(&data_dir) {
+        Some(cfg) => {
+            let queue_count = cloud_sync::sync_queue::queue_count(&data_dir);
+            // Get Google account info if available
+            let account = cloud_backup::google_auth::get_token(&data_dir, 0)
+                .ok()
+                .flatten();
+            Ok(serde_json::json!({
+                "connected": true,
+                "store_id": cfg.store_id,
+                "owner_email": cfg.owner_email,
+                "store_name": cfg.store_name,
+                "connected_at": cfg.connected_at,
+                "last_sync": cfg.last_sync,
+                "queue_count": queue_count,
+                "account_name": account.as_ref().map(|a| a.name.clone()),
+                "account_picture": account.as_ref().map(|a| a.picture.clone()),
+            }))
+        }
+        None => Ok(serde_json::json!({
+            "connected": false,
+        })),
+    }
+}
+
+/// Manual full sync trigger
+#[tauri::command]
+pub async fn cloud_sync_now(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let db_arc = db.inner().clone();
+    cloud_sync::manual_full_sync(&data_dir, &db_arc).await
 }
 
 // ─── Suppliers ──────────────────────────────────────────────────────────────

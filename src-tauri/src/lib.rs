@@ -3,6 +3,7 @@ mod db;
 mod hardware;
 mod shopify;
 mod cloud_backup;
+mod cloud_sync;
 mod import;
 mod payments;
 
@@ -38,7 +39,17 @@ pub fn run() {
             app.manage(scheduler.clone());
 
             // Start background scheduler
-            cloud_backup::scheduler::start_scheduler(scheduler, db_state);
+            cloud_backup::scheduler::start_scheduler(scheduler, db_state.clone());
+
+            // Start cloud sync queue processor
+            let sync_data_dir = data_dir.clone();
+            let sync_db = db_state;
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
+                    let _ = cloud_sync::process_sync_queue(&sync_data_dir, &sync_db).await;
+                }
+            });
 
             Ok(())
         })
@@ -192,6 +203,11 @@ pub fn run() {
             payment_get_queue,
             payment_method_breakdown,
             payment_gateway_summary,
+            // Cloud Sync (Supabase)
+            cloud_sync_connect,
+            cloud_sync_disconnect,
+            cloud_sync_status,
+            cloud_sync_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
