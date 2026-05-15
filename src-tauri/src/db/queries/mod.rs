@@ -12,3 +12,4 @@ pub mod users;
 pub mod suppliers;
 pub mod financials;
 pub mod repair;
+pub mod payments;

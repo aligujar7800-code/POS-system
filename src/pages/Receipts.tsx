@@ -5,7 +5,7 @@ import { cmd, formatCurrency } from '../lib/utils';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../components/ui/Toaster';
 import { format } from 'date-fns';
-import { Search, Printer, Eye, X, Receipt as ReceiptIcon, ArrowRightLeft, AlertTriangle, Barcode as BarcodeIcon } from 'lucide-react';
+import { Search, Printer, Eye, X, Receipt as ReceiptIcon, ArrowRightLeft, AlertTriangle, Barcode as BarcodeIcon, RotateCw, CreditCard, Store } from 'lucide-react';
 import { cn } from '../lib/utils';
 import Barcode from 'react-barcode';
 import { useBarcode } from '../hooks/useBarcode';
@@ -310,10 +310,49 @@ export function SaleDetailsModal({
   receipt_font?: string;
   autoPrint?: boolean;
 }) {
-  const { data, isLoading, error } = useQuery<[Sale, SaleItem[]]>({
+  const { data, isLoading, error, refetch } = useQuery<[Sale, SaleItem[]]>({
     queryKey: ['sale-details', saleId],
     queryFn: () => cmd('get_sale_with_items', { id: saleId })
   });
+
+  const [refundLoading, setRefundLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const handleGatewayRefund = async () => {
+    if (!data) return;
+    const [sale] = data;
+    
+    if (!window.confirm(`Are you sure you want to refund ${formatCurrency(sale.total_amount, currency_symbol)} via ${sale.payment_method}?`)) {
+      return;
+    }
+
+    setRefundLoading(true);
+    try {
+      // 1. Process gateway refund
+      const result = await cmd<any>('payment_refund', {
+        gateway: sale.payment_method,
+        saleId: sale.id,
+        amount: sale.total_amount,
+        reason: "Customer requested refund"
+      });
+
+      if (result.status === 'success') {
+        toast("Gateway refund successful: " + (result.message || ""), "success");
+        // 2. Mark sale as returned/refunded in local DB (simplified)
+        // In a real app, you might want to call process_sales_return too
+        queryClient.invalidateQueries({ queryKey: ['sale-details', saleId] });
+        queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+        refetch();
+      } else {
+        toast("Refund failed: " + (result.message || "Unknown error"), "error");
+      }
+    } catch (err: any) {
+      toast("Refund Error: " + err.toString(), "error");
+    } finally {
+      setRefundLoading(false);
+    }
+  };
 
   React.useEffect(() => {
     if (data && autoPrint) {
@@ -435,6 +474,12 @@ export function SaleDetailsModal({
             )}
             {(sale.total_amount - sale.paid_amount) > 0.01 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c00', fontWeight: 'bold' }}><span>BALANCE DUE:</span><span>{formatCurrency(sale.total_amount - sale.paid_amount, currency_symbol)}</span></div>
+            )}
+            {sale.notes && (
+              <div style={{ marginTop: '8px', padding: '6px', backgroundColor: '#f9f9f9', border: '1px solid #eee', fontSize: '10px' }}>
+                <span style={{ fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>NOTES:</span>
+                {sale.notes}
+              </div>
             )}
           </div>
 
@@ -570,6 +615,12 @@ export function SaleDetailsModal({
             {(sale.total_amount - sale.paid_amount) > 0.01 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c00', fontWeight: 'bold' }}><span>BALANCE DUE:</span><span>{formatCurrency(sale.total_amount - sale.paid_amount, currency_symbol)}</span></div>
             )}
+            {sale.notes && (
+              <div style={{ marginTop: '8px', padding: '6px', backgroundColor: '#f9f9f9', border: '1px solid #eee', fontSize: '10px' }}>
+                <span style={{ fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>NOTES:</span>
+                {sale.notes}
+              </div>
+            )}
           </div>
 
           {/* Double-line separator */}
@@ -634,6 +685,18 @@ export function SaleDetailsModal({
             <ArrowRightLeft className="w-4 h-4" />
             Return Items
           </button>
+
+          {/* Gateway Refund Button */}
+          {['jazzcash', 'easypaisa', 'hbl_pay', 'stripe'].includes(sale.payment_method) && sale.status === 'paid' && (
+            <button
+              onClick={handleGatewayRefund}
+              disabled={refundLoading}
+              className="btn-secondary py-2 rounded-lg flex items-center justify-center gap-2 text-orange-600 border-orange-200 hover:bg-orange-50 disabled:opacity-50"
+            >
+              {refundLoading ? <RotateCw className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
+              Full Refund via {sale.payment_method}
+            </button>
+          )}
         </div>
       </div>
     </>

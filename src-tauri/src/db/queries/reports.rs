@@ -12,6 +12,9 @@ pub struct SalesReportRow {
     pub cash: f64,
     pub card: f64,
     pub udhaar: f64,
+    pub jazzcash: f64,
+    pub easypaisa: f64,
+    pub hbl_pay: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -44,7 +47,10 @@ pub fn sales_report(conn: &Connection, from: &str, to: &str, group_by: &str) -> 
                 COALESCE(SUM(total_amount), 0),
                 COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN paid_amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN payment_method = 'card' THEN paid_amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status = 'udhaar' OR status = 'partial' THEN total_amount - paid_amount ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN status = 'udhaar' OR status = 'partial' THEN total_amount - paid_amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN payment_method = 'jazzcash' THEN paid_amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN payment_method = 'easypaisa' THEN paid_amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN payment_method = 'hbl_pay' THEN paid_amount ELSE 0 END), 0)
          FROM sales
          WHERE date(sale_date, 'localtime') BETWEEN ?1 AND ?2
          GROUP BY period ORDER BY period"
@@ -61,6 +67,9 @@ pub fn sales_report(conn: &Connection, from: &str, to: &str, group_by: &str) -> 
             cash: row.get(6)?,
             card: row.get(7)?,
             udhaar: row.get(8)?,
+            jazzcash: row.get(9)?,
+            easypaisa: row.get(10)?,
+            hbl_pay: row.get(11)?,
         })
     })?;
     rows.collect()

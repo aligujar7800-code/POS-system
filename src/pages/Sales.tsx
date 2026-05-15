@@ -10,10 +10,14 @@ import { useAuthStore } from '../stores/authStore';
 import { SaleDetailsModal } from './Receipts';
 import { useBarcode, useGlobalBarcode } from '../hooks/useBarcode';
 import { useToast } from '../components/ui/Toaster';
+import PaymentFlowModal from '../components/ui/PaymentFlowModal';
+import jazzcashLogo from '../assets/jazzcash.png';
+import easypaisaLogo from '../assets/easypaisa.png';
+import hblLogo from '../assets/hbl.png';
 import {
   Search, Plus, Minus, Trash2, X, UserPlus, User,
-  CreditCard, Banknote, BookOpen, CheckCircle,
-  Scan, ShoppingCart, ChevronDown
+  Banknote, BookOpen, CheckCircle,
+  Scan, ShoppingCart, ChevronDown, CreditCard, Store
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -35,7 +39,7 @@ interface ProductVariant {
 }
 interface Customer { id: number; name: string; phone: string; outstanding_balance: number; }
 
-type PaymentMethod = 'cash' | 'card' | 'udhaar' | 'mixed';
+type PaymentMethod = 'cash' | 'card' | 'udhaar' | 'mixed' | 'jazzcash' | 'easypaisa' | 'hbl_pay';
 
 // ─── Barcode indicator ────────────────────────────────────────────────────────
 function ScannerIndicator() {
@@ -192,6 +196,8 @@ export default function SalesPage() {
   const [lastSaleId, setLastSaleId] = useState<number | null>(null);
   const [autoPrintSaleId, setAutoPrintSaleId] = useState<number | null>(null);
   const [showVariants, setShowVariants] = useState<Product | null>(null);
+  const [showPaymentFlow, setShowPaymentFlow] = useState<'jazzcash' | 'easypaisa' | 'hbl_pay' | 'stripe' | null>(null);
+  const [pendingGatewayTxnId, setPendingGatewayTxnId] = useState<number | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -345,6 +351,12 @@ export default function SalesPage() {
 
     if ((paymentMethod === 'udhaar' || paid < total) && !cart.customer) {
       toast('Customer is required for Udhaar / partial payment sales', 'error');
+      return;
+    }
+
+    // For digital gateway payments, open the payment flow modal first
+    if (['jazzcash', 'easypaisa', 'hbl_pay'].includes(paymentMethod)) {
+      setShowPaymentFlow(paymentMethod as any);
       return;
     }
 
@@ -605,7 +617,8 @@ export default function SalesPage() {
         {/* Payment method */}
         <div className="p-4 border-b border-slate-100">
           <label className="label">{t('sales.amountPaid')}</label>
-          <div className="grid grid-cols-4 gap-1 mb-3">
+          {/* Primary methods */}
+          <div className="grid grid-cols-4 gap-1 mb-2">
             {(['cash', 'card', 'udhaar', 'mixed'] as PaymentMethod[]).map((m) => (
               <button
                 key={m}
@@ -620,8 +633,41 @@ export default function SalesPage() {
               </button>
             ))}
           </div>
+          {/* Digital payment gateways */}
+          <div className="grid grid-cols-3 gap-1 mb-3">
+            <button
+              onClick={() => setPaymentMethod('jazzcash')}
+              className={cn('rounded-lg py-1.5 text-xs font-bold transition-colors flex items-center justify-center gap-1',
+                paymentMethod === 'jazzcash'
+                  ? 'bg-red-600 text-white shadow-lg shadow-red-200'
+                  : 'bg-white text-red-700 hover:bg-red-50 border border-red-100'
+              )}
+            >
+              <img src={jazzcashLogo} className="w-4 h-4 object-contain" /> JazzCash
+            </button>
+            <button
+              onClick={() => setPaymentMethod('easypaisa')}
+              className={cn('rounded-lg py-1.5 text-xs font-bold transition-colors flex items-center justify-center gap-1',
+                paymentMethod === 'easypaisa'
+                  ? 'bg-green-600 text-white shadow-lg shadow-green-200'
+                  : 'bg-white text-green-700 hover:bg-green-50 border border-green-100'
+              )}
+            >
+              <img src={easypaisaLogo} className="w-4 h-4 object-contain" /> EasyPaisa
+            </button>
+            <button
+              onClick={() => setPaymentMethod('hbl_pay')}
+              className={cn('rounded-lg py-1.5 text-xs font-bold transition-colors flex items-center justify-center gap-1',
+                paymentMethod === 'hbl_pay'
+                  ? 'bg-blue-800 text-white shadow-lg shadow-blue-200'
+                  : 'bg-white text-blue-800 hover:bg-blue-50 border border-blue-100'
+              )}
+            >
+              <img src={hblLogo} className="w-4 h-4 object-contain" /> HBL Pay
+            </button>
+          </div>
 
-          {paymentMethod !== 'udhaar' && (
+          {!['udhaar', 'jazzcash', 'easypaisa', 'hbl_pay'].includes(paymentMethod) && (
             <div>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">Rs.</span>
@@ -646,6 +692,13 @@ export default function SalesPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {['jazzcash', 'easypaisa', 'hbl_pay'].includes(paymentMethod) && (
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <p className="text-xs text-slate-500">Full amount will be charged via {paymentMethod === 'jazzcash' ? 'JazzCash' : paymentMethod === 'easypaisa' ? 'EasyPaisa' : 'HBL Pay'}</p>
+              <p className="text-lg font-bold text-slate-800 mt-1">{fmt(total)}</p>
             </div>
           )}
         </div>
@@ -823,6 +876,86 @@ export default function SalesPage() {
           logo_align={logo_align}
           receipt_font={receipt_font}
           autoPrint={true}
+        />
+      )}
+
+      {/* Payment Gateway Flow Modal */}
+      {showPaymentFlow && (
+        <PaymentFlowModal
+          gateway={showPaymentFlow}
+          amount={total}
+          invoiceNumber={`PENDING-${Date.now()}`}
+          currencySymbol={currency_symbol}
+          onSuccess={async (txnId, gatewayRef) => {
+            setPendingGatewayTxnId(txnId);
+            setShowPaymentFlow(null);
+            // Now create the sale with gateway payment method
+            setCompleting(true);
+            try {
+              const [id, invoice] = await cmd<[number, string]>('create_sale', {
+                payload: {
+                  customer_id: cart.customer?.id ?? null,
+                  items: cart.items.map((i) => ({
+                    product_id: i.product_id,
+                    variant_id: i.variant_id ?? null,
+                    product_name: i.product_name,
+                    barcode: i.barcode ?? null,
+                    quantity: i.quantity,
+                    unit_price: i.unit_price,
+                    discount: i.discount,
+                    total_price: i.total_price,
+                  })),
+                  subtotal,
+                  discount_amount: totalDiscount,
+                  discount_percent: subtotal > 0 ? (totalDiscount / subtotal) * 100 : 0,
+                  tax_amount: tax,
+                  total_amount: total,
+                  paid_amount: total,
+                  change_amount: 0,
+                  payment_method: paymentMethod,
+                  status: 'paid',
+                  notes: saleNotes ? `${saleNotes} | Gateway Ref: ${gatewayRef || txnId}` : `Gateway Ref: ${gatewayRef || txnId}`,
+                  created_by: user?.id ?? null,
+                }
+              });
+
+              // Link payment transaction to the sale
+              if (txnId) {
+                cmd('payment_link_to_sale', { txnId, saleId: id }).catch(console.error);
+              }
+
+              setAutoPrintSaleId(id);
+              toast(`Sale complete! Invoice: ${invoice} (${paymentMethod === 'jazzcash' ? 'JazzCash' : paymentMethod === 'easypaisa' ? 'EasyPaisa' : 'HBL Pay'})`, 'success');
+
+              queryClient.invalidateQueries({ queryKey: ['sales'] });
+              queryClient.invalidateQueries({ queryKey: ['products'] });
+              queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+              queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+              queryClient.invalidateQueries({ queryKey: ['financial-ledger'] });
+
+              if (printer_type && printer_type !== 'none') {
+                cmd('print_sale_by_id', {
+                  id, config: { printer_type, port: printer_port, baud_rate: printer_baud }
+                }).catch(e => toast("Print failed: " + e.toString(), "error"));
+              }
+
+              cart.clearCart();
+              setPaidAmount('');
+              setSaleNotes('');
+              setPaymentMethod('cash');
+            } catch (err: any) {
+              toast(err.toString(), 'error');
+            } finally {
+              setCompleting(false);
+              setPendingGatewayTxnId(null);
+            }
+          }}
+          onCancel={() => setShowPaymentFlow(null)}
+          onOfflineQueue={() => {
+            setShowPaymentFlow(null);
+            toast('Payment queued. Complete sale with cash for now.', 'info');
+            setPaymentMethod('cash');
+          }}
         />
       )}
     </div>

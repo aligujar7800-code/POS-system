@@ -4,6 +4,7 @@ mod hardware;
 mod shopify;
 mod cloud_backup;
 mod import;
+mod payments;
 
 use commands::*;
 use parking_lot::Mutex;
@@ -178,6 +179,19 @@ pub fn run() {
             import_execute,
             import_rollback,
             import_history,
+            // Payment Gateways
+            payment_save_credentials,
+            payment_get_configured,
+            payment_remove_credentials,
+            payment_initiate,
+            payment_check_status,
+            payment_refund,
+            payment_link_to_sale,
+            payment_get_sale_transactions,
+            payment_queue_offline,
+            payment_get_queue,
+            payment_method_breakdown,
+            payment_gateway_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

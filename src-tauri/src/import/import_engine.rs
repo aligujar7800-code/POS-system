@@ -223,7 +223,7 @@ pub fn execute_import(
     for chunk in rows.chunks(chunk_size) {
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
-        for (local_idx, row) in chunk.iter().enumerate() {
+        for (_local_idx, row) in chunk.iter().enumerate() {
             let global_idx = imported + skipped + err_count + 1;
 
             let product_name = get_val(row, name_idx).unwrap_or_default();

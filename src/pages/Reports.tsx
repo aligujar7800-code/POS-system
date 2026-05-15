@@ -7,12 +7,16 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, Tooltip, Legend,
   XAxis, YAxis, ResponsiveContainer, CartesianGrid
 } from 'recharts';
-import { BarChart3, TrendingUp, Package, Download } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, Download, CreditCard, Store } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { useToast } from '../components/ui/Toaster';
 
-const COLORS = ['#6174f4', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'];
+import jazzcashLogo from '../assets/jazzcash.png';
+import easypaisaLogo from '../assets/easypaisa.png';
+import hblLogo from '../assets/hbl.png';
+
+const COLORS = ['#6174f4', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#e2001a', '#00a651', '#003366'];
 
 type Tab = 'sales' | 'pl' | 'inventory' | 'trial_balance' | 'pl_statement';
 type GroupBy = 'daily' | 'weekly' | 'monthly';
@@ -92,6 +96,9 @@ export default function ReportsPage() {
     { name: 'Cash', value: salesData.reduce((s, d) => s + (d.cash ?? 0), 0) },
     { name: 'Card', value: salesData.reduce((s, d) => s + (d.card ?? 0), 0) },
     { name: 'Udhaar', value: salesData.reduce((s, d) => s + (d.udhaar ?? 0), 0) },
+    { name: 'JazzCash', value: salesData.reduce((s, d) => s + (d.jazzcash ?? 0), 0) },
+    { name: 'EasyPaisa', value: salesData.reduce((s, d) => s + (d.easypaisa ?? 0), 0) },
+    { name: 'HBL Pay', value: salesData.reduce((s, d) => s + (d.hbl_pay ?? 0), 0) },
   ].filter(d => d.value > 0) : [];
 
   const totalRevenue = salesData.reduce((s, d) => s + (d.revenue ?? 0), 0);
@@ -286,6 +293,32 @@ export default function ReportsPage() {
               )}
             </div>
           </div>
+
+          {/* Gateway Summary */}
+          {salesData.length > 0 && (
+            <div className="card p-5">
+              <h3 className="font-semibold text-slate-700 mb-4">Digital Gateway Summary</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { name: 'JazzCash', key: 'jazzcash', color: 'bg-red-50 text-red-700', icon: <img src={jazzcashLogo} className="w-5 h-5 object-contain" /> },
+                  { name: 'EasyPaisa', key: 'easypaisa', color: 'bg-green-50 text-green-700', icon: <img src={easypaisaLogo} className="w-5 h-5 object-contain" /> },
+                  { name: 'HBL Pay', key: 'hbl_pay', color: 'bg-blue-50 text-blue-900', icon: <img src={hblLogo} className="w-5 h-5 object-contain" /> },
+                ].map(gw => {
+                  const val = salesData.reduce((s, d) => s + (d[gw.key] ?? 0), 0);
+                  if (val === 0) return null;
+                  return (
+                    <div key={gw.key} className={`p-4 rounded-2xl ${gw.color} flex items-center justify-between`}>
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white/50 rounded-lg">{gw.icon}</div>
+                        <span className="font-bold text-sm">{gw.name}</span>
+                      </div>
+                      <span className="font-black font-mono">{fmt(val)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

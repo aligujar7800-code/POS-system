@@ -100,6 +100,11 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_version VALUES (16)", [])?;
     }
 
+    if current_version < 17 {
+        let _ = conn.execute_batch(MIGRATION_V17);
+        conn.execute("INSERT INTO schema_version VALUES (17)", [])?;
+    }
+
     Ok(())
 }
 
@@ -594,4 +599,50 @@ CREATE INDEX IF NOT EXISTS idx_import_batch ON import_history(batch_id);
 -- Add legacy_barcode to product_variants for preserving old POS barcodes
 ALTER TABLE product_variants ADD COLUMN legacy_barcode TEXT;
 CREATE INDEX IF NOT EXISTS idx_variants_legacy_barcode ON product_variants(legacy_barcode);
+";
+
+const MIGRATION_V17: &str = "
+-- Payment Transactions: track every gateway payment attempt
+CREATE TABLE IF NOT EXISTS payment_transactions (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id          INTEGER REFERENCES sales(id) ON DELETE SET NULL,
+    gateway          TEXT NOT NULL CHECK(gateway IN ('jazzcash','easypaisa','hbl_pay','stripe')),
+    gateway_ref      TEXT,
+    transaction_type TEXT NOT NULL CHECK(transaction_type IN ('payment','refund')) DEFAULT 'payment',
+    amount           REAL NOT NULL,
+    status           TEXT NOT NULL CHECK(status IN ('pending','success','failed','refunded','queued','expired')) DEFAULT 'pending',
+    customer_phone   TEXT,
+    request_payload  TEXT,
+    response_payload TEXT,
+    error_message    TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_txn_sale ON payment_transactions(sale_id);
+CREATE INDEX IF NOT EXISTS idx_payment_txn_gateway ON payment_transactions(gateway);
+CREATE INDEX IF NOT EXISTS idx_payment_txn_status ON payment_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_payment_txn_date ON payment_transactions(created_at);
+
+-- Payment Queue: offline transactions awaiting retry
+CREATE TABLE IF NOT EXISTS payment_queue (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    gateway      TEXT NOT NULL,
+    payload      TEXT NOT NULL,
+    retry_count  INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT,
+    status       TEXT NOT NULL CHECK(status IN ('pending','done','failed')) DEFAULT 'pending',
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_queue_status ON payment_queue(status);
+
+-- Expand payment_method to include digital gateways
+-- SQLite doesn't support ALTER CHECK, so we recreate via a safe approach
+-- We'll just insert the new default settings for gateways
+INSERT OR IGNORE INTO settings (key, value) VALUES
+    ('gateway_jazzcash_enabled', '0'),
+    ('gateway_easypaisa_enabled', '0'),
+    ('gateway_hbl_enabled', '0'),
+    ('gateway_stripe_enabled', '0');
 ";

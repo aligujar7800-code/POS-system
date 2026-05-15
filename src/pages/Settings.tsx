@@ -6,11 +6,16 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toaster';
-import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine } from 'lucide-react';
+import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X } from 'lucide-react';
 import ImportWizard from '../components/ImportWizard';
 import { save } from '@tauri-apps/plugin-dialog';
 
-type Tab = 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'import' | 'language' | 'license';
+import jazzcashLogo from '../assets/jazzcash.png';
+import easypaisaLogo from '../assets/easypaisa.png';
+import hblLogo from '../assets/hbl.png';
+import stripeLogo from '../assets/stripe.png';
+
+type Tab = 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license';
 type IntegrationView = 'list' | 'shopify' | 'google';
 
 interface BackupEntry { id: string; name: string; size: string; created_time: string; }
@@ -459,6 +464,53 @@ export default function SettingsPage() {
     }
   };
 
+  // Payment gateway settings state
+  const [gwSaving, setGwSaving] = useState(false);
+  const [gwConfigured, setGwConfigured] = useState<any[]>([]);
+  const [gwForm, setGwForm] = useState<{gateway: string; merchant_id: string; password: string; integrity_salt: string; api_key: string; api_secret: string; sandbox: boolean} | null>(null);
+
+  useEffect(() => {
+    if (tab === 'payments') {
+      cmd<any[]>('payment_get_configured').then(setGwConfigured).catch(() => {});
+    }
+  }, [tab]);
+
+  const saveGatewayCredentials = async () => {
+    if (!gwForm) return;
+    setGwSaving(true);
+    try {
+      await cmd('payment_save_credentials', {
+        gateway: gwForm.gateway,
+        merchantId: gwForm.merchant_id,
+        password: gwForm.password,
+        integritySalt: gwForm.integrity_salt || null,
+        apiKey: gwForm.api_key || null,
+        apiSecret: gwForm.api_secret || null,
+        sandbox: gwForm.sandbox,
+      });
+      toast(`${gwForm.gateway} credentials saved securely!`, 'success');
+      setGwForm(null);
+      const updated = await cmd<any[]>('payment_get_configured');
+      setGwConfigured(updated);
+    } catch (e: any) {
+      toast(e.toString(), 'error');
+    } finally {
+      setGwSaving(false);
+    }
+  };
+
+  const removeGateway = async (gw: string) => {
+    if (!window.confirm(`Remove ${gw} credentials?`)) return;
+    try {
+      await cmd('payment_remove_credentials', { gateway: gw });
+      toast('Credentials removed', 'success');
+      const updated = await cmd<any[]>('payment_get_configured');
+      setGwConfigured(updated);
+    } catch (e: any) {
+      toast(e.toString(), 'error');
+    }
+  };
+
   const tabs: [Tab, string, React.ReactNode][] = [
     ['shop', t('settings.shopInfo'), <Store className="w-4 h-4" />],
     ['receipt', t('settings.receipt'), <Settings className="w-4 h-4" />],
@@ -466,6 +518,7 @@ export default function SettingsPage() {
     ['users', t('settings.users'), <Users className="w-4 h-4" />],
     ['hardware', t('settings.hardware'), <Printer className="w-4 h-4" />],
     ['integrations', 'Integrations', <ShoppingBag className="w-4 h-4" />],
+    ['payments', 'Payment Gateways', <CreditCard className="w-4 h-4" />],
     ['import', 'Data Import', <ArrowDownToLine className="w-4 h-4" />],
     ['language', t('settings.language'), <Globe className="w-4 h-4" />],
     ['license', 'License', <ShieldCheck className="w-4 h-4" />],
@@ -1747,6 +1800,221 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+
+          {/* Payment Gateways Tab */}
+          {tab === 'payments' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="space-y-6 max-w-4xl">
+                
+                {/* Gateway List */}
+                {!gwForm && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                      { 
+                        id: 'jazzcash', 
+                        name: 'JazzCash', 
+                        desc: 'Accept payments via JazzCash Mobile Wallet (MIGS)', 
+                        icon: <img src={jazzcashLogo} className="w-full h-full object-contain p-1" alt="JazzCash" />,
+                        color: 'red'
+                      },
+                      { 
+                        id: 'easypaisa', 
+                        name: 'EasyPaisa', 
+                        desc: 'Merchant Account (MA) API for Telenor EasyPaisa', 
+                        icon: <img src={easypaisaLogo} className="w-full h-full object-contain p-1" alt="EasyPaisa" />,
+                        color: 'green'
+                      },
+                      { 
+                        id: 'hbl_pay', 
+                        name: 'HBL Pay', 
+                        desc: 'Dynamic QR codes and direct bank integration', 
+                        icon: <img src={hblLogo} className="w-full h-full object-contain p-1" alt="HBL Pay" />,
+                        color: 'blue'
+                      },
+                      { 
+                        id: 'stripe', 
+                        name: 'Stripe', 
+                        desc: 'Global card payments (requires international gateway)', 
+                        icon: <img src={stripeLogo} className="w-full h-full object-contain p-1" alt="Stripe" />,
+                        color: 'indigo'
+                      }
+                    ].map(gw => {
+                      const config = gwConfigured.find(c => c.gateway === gw.id);
+                      return (
+                        <div key={gw.id} className="card p-6 flex flex-col justify-between hover:shadow-lg transition-shadow border-slate-100">
+                          <div className="flex gap-4 mb-4">
+                            <div className="w-16 h-16 rounded-2xl bg-white shadow-sm border border-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {gw.icon}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800">{gw.name}</h3>
+                                {config && (
+                                  <span className="badge-green text-[10px] py-0.5 px-2">Active</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">{gw.desc}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => setGwForm({
+                                gateway: gw.id,
+                                merchant_id: '',
+                                password: '',
+                                integrity_salt: '',
+                                api_key: '',
+                                api_secret: '',
+                                sandbox: true
+                              })}
+                              className="btn-secondary btn-sm flex-1"
+                            >
+                              {config ? 'Reconfigure' : 'Setup Now'}
+                            </button>
+                            {config && (
+                              <button 
+                                onClick={() => removeGateway(gw.id)}
+                                className="btn-secondary btn-sm text-red-600 hover:bg-red-50 border-red-100"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Gateway Configuration Form */}
+                {gwForm && (
+                  <div className="card max-w-2xl animate-in zoom-in-95 duration-200">
+                    <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center overflow-hidden">
+                          {gwForm.gateway === 'jazzcash' && <img src={jazzcashLogo} className="w-full h-full object-contain p-1" />}
+                          {gwForm.gateway === 'easypaisa' && <img src={easypaisaLogo} className="w-full h-full object-contain p-1" />}
+                          {gwForm.gateway === 'hbl_pay' && <img src={hblLogo} className="w-full h-full object-contain p-1" />}
+                          {gwForm.gateway === 'stripe' && <img src={stripeLogo} className="w-full h-full object-contain p-1" />}
+                        </div>
+                        <h2 className="font-bold text-slate-800 capitalize">Configure {gwForm.gateway}</h2>
+                      </div>
+                      <button onClick={() => setGwForm(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-slate-400" />
+                      </button>
+                    </div>
+
+                    <div className="p-8 space-y-6">
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="col-span-2">
+                          <label className="label">Merchant ID / Store ID</label>
+                          <input 
+                            value={gwForm.merchant_id}
+                            onChange={e => setGwForm({...gwForm, merchant_id: e.target.value})}
+                            className="input"
+                            placeholder="Enter your Merchant ID"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="label">API Password / Key</label>
+                          <input 
+                            type="password"
+                            value={gwForm.password}
+                            onChange={e => setGwForm({...gwForm, password: e.target.value})}
+                            className="input"
+                            placeholder="••••••••"
+                          />
+                        </div>
+
+                        {gwForm.gateway === 'jazzcash' && (
+                          <div>
+                            <label className="label">Integrity Salt</label>
+                            <input 
+                              type="password"
+                              value={gwForm.integrity_salt}
+                              onChange={e => setGwForm({...gwForm, integrity_salt: e.target.value})}
+                              className="input"
+                              placeholder="Required for hashing"
+                            />
+                          </div>
+                        )}
+
+                        {(gwForm.gateway === 'hbl_pay' || gwForm.gateway === 'stripe') && (
+                          <div className="col-span-2">
+                            <label className="label">API Key (Bearer Token)</label>
+                            <input 
+                              type="password"
+                              value={gwForm.api_key}
+                              onChange={e => setGwForm({...gwForm, api_key: e.target.value})}
+                              className="input"
+                              placeholder="Enter API Key"
+                            />
+                          </div>
+                        )}
+
+                        {gwForm.gateway === 'stripe' && (
+                          <div className="col-span-2">
+                            <label className="label">Webhook Secret</label>
+                            <input 
+                              type="password"
+                              value={gwForm.api_secret}
+                              onChange={e => setGwForm({...gwForm, api_secret: e.target.value})}
+                              className="input"
+                              placeholder="whsec_..."
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white rounded-full">
+                            <ShieldCheck className="w-5 h-5 text-amber-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-amber-900">Sandbox / Test Mode</p>
+                            <p className="text-[10px] text-amber-700">Use test credentials before going live</p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={gwForm.sandbox}
+                            onChange={e => setGwForm({...gwForm, sandbox: e.target.checked})}
+                            className="sr-only peer" 
+                          />
+                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                        </label>
+                      </div>
+
+                      <div className="flex gap-3 pt-4 border-t border-slate-100">
+                        <button 
+                          onClick={saveGatewayCredentials} 
+                          disabled={gwSaving || !gwForm.merchant_id}
+                          className="btn-primary flex-1 py-3"
+                        >
+                          {gwSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                          Save Credentials Securely
+                        </button>
+                        <button onClick={() => setGwForm(null)} className="btn-secondary px-6">
+                          Cancel
+                        </button>
+                      </div>
+                      
+                      <p className="text-[10px] text-slate-400 text-center italic">
+                        <ShieldCheck className="w-3 h-3 inline mr-1" />
+                        All payment credentials are encrypted using AES-256-GCM and stored locally. 
+                        They never leave your computer.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

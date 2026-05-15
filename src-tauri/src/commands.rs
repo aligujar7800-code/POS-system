@@ -1667,3 +1667,264 @@ pub fn init_db(app: &tauri::AppHandle) -> Result<Connection, String> {
     migrations::run_migrations(&conn).map_err(|e: rusqlite::Error| e.to_string())?;
     Ok(conn)
 }
+
+// ─── Payment Gateways ────────────────────────────────────────────────────────
+
+use crate::payments::{credentials, jazzcash, easypaisa, hbl, stripe_pay, types as pay_types};
+
+/// Save gateway credentials (encrypted in app data dir)
+#[tauri::command]
+pub fn payment_save_credentials(
+    app: tauri::AppHandle,
+    gateway: String,
+    merchant_id: String,
+    password: String,
+    integrity_salt: Option<String>,
+    api_key: Option<String>,
+    api_secret: Option<String>,
+    sandbox: bool,
+) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let creds = pay_types::GatewayCredentials {
+        gateway: gateway.clone(),
+        merchant_id,
+        password,
+        integrity_salt,
+        api_key,
+        api_secret,
+        sandbox,
+    };
+    credentials::save_credentials(&data_dir, &gateway, &creds)
+}
+
+/// Get configured gateways (masked credentials)
+#[tauri::command]
+pub fn payment_get_configured(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    credentials::get_configured_gateways(&data_dir)
+}
+
+/// Remove gateway credentials
+#[tauri::command]
+pub fn payment_remove_credentials(
+    app: tauri::AppHandle,
+    gateway: String,
+) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    credentials::remove_credentials(&data_dir, &gateway)
+}
+
+/// Initiate a payment through any gateway
+#[tauri::command]
+pub async fn payment_initiate(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    gateway: String,
+    amount: f64,
+    customer_phone: Option<String>,
+    invoice_number: String,
+    description: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let creds = credentials::get_credentials(&data_dir, &gateway)?
+        .ok_or_else(|| format!("{} credentials not configured", gateway))?;
+
+    let desc = description.as_deref().unwrap_or("POS Payment");
+
+    let result = match gateway.as_str() {
+        "jazzcash" => {
+            let phone = customer_phone.as_deref()
+                .ok_or("Customer phone required for JazzCash")?;
+            jazzcash::initiate_payment(&creds, amount, phone, &invoice_number, desc).await
+        }
+        "easypaisa" => {
+            let phone = customer_phone.as_deref()
+                .ok_or("Customer phone required for EasyPaisa")?;
+            easypaisa::initiate_payment(&creds, amount, phone, &invoice_number, desc).await
+        }
+        "hbl_pay" => {
+            hbl::generate_qr(&creds, amount, &invoice_number).await
+        }
+        "stripe" => {
+            stripe_pay::create_payment_intent(&creds, amount, &invoice_number).await
+        }
+        _ => Err(format!("Unknown gateway: {}", gateway)),
+    }?;
+
+    // Record transaction in DB
+    let conn = db.lock();
+    let txn_id = payments::insert_transaction(
+        &conn,
+        None,
+        &gateway,
+        result.gateway_ref.as_deref(),
+        "payment",
+        amount,
+        result.status.as_str(),
+        customer_phone.as_deref(),
+        Some(&serde_json::json!({"invoice": invoice_number}).to_string()),
+        result.raw_response.as_deref(),
+        if result.status == pay_types::TransactionStatus::Failed {
+            Some(&result.message)
+        } else { None },
+    ).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "txn_id": txn_id,
+        "transaction_id": result.transaction_id,
+        "gateway_ref": result.gateway_ref,
+        "status": result.status.as_str(),
+        "amount": result.amount,
+        "message": result.message,
+        "qr_code_data": result.qr_code_data,
+    }))
+}
+
+/// Check payment status (polling for pending transactions)
+#[tauri::command]
+pub async fn payment_check_status(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    gateway: String,
+    transaction_id: String,
+    txn_id: i64,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let creds = credentials::get_credentials(&data_dir, &gateway)?
+        .ok_or_else(|| format!("{} credentials not configured", gateway))?;
+
+    let result = match gateway.as_str() {
+        "jazzcash" => jazzcash::check_status(&creds, &transaction_id).await,
+        "easypaisa" => easypaisa::check_status(&creds, &transaction_id).await,
+        "hbl_pay" => hbl::check_status(&creds, &transaction_id).await,
+        _ => Err(format!("Status check not supported for {}", gateway)),
+    }?;
+
+    // Update DB record
+    let conn = db.lock();
+    payments::update_transaction_status(
+        &conn,
+        txn_id,
+        result.status.as_str(),
+        result.gateway_ref.as_deref(),
+        result.raw_response.as_deref(),
+        if result.status == pay_types::TransactionStatus::Failed {
+            Some(&result.message)
+        } else { None },
+    ).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "status": result.status.as_str(),
+        "message": result.message,
+        "gateway_ref": result.gateway_ref,
+    }))
+}
+
+/// Process a refund through the original gateway
+#[tauri::command]
+pub async fn payment_refund(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    gateway: String,
+    original_ref: String,
+    amount: f64,
+) -> Result<serde_json::Value, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let creds = credentials::get_credentials(&data_dir, &gateway)?
+        .ok_or_else(|| format!("{} credentials not configured", gateway))?;
+
+    let result = match gateway.as_str() {
+        "jazzcash" => jazzcash::process_refund(&creds, &original_ref, amount).await,
+        "easypaisa" => easypaisa::process_refund(&creds, &original_ref, amount).await,
+        "hbl_pay" => hbl::process_refund(&creds, &original_ref, amount).await,
+        "stripe" => stripe_pay::process_refund(&creds, &original_ref, amount).await,
+        _ => Err(format!("Refund not supported for {}", gateway)),
+    }?;
+
+    // Record refund transaction
+    let conn = db.lock();
+    let txn_id = payments::insert_transaction(
+        &conn,
+        None,
+        &gateway,
+        result.gateway_ref.as_deref(),
+        "refund",
+        amount,
+        result.status.as_str(),
+        None,
+        Some(&serde_json::json!({"original_ref": original_ref}).to_string()),
+        result.raw_response.as_deref(),
+        if result.status == pay_types::TransactionStatus::Failed {
+            Some(&result.message)
+        } else { None },
+    ).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "txn_id": txn_id,
+        "status": result.status.as_str(),
+        "message": result.message,
+    }))
+}
+
+/// Link a completed payment transaction to a sale
+#[tauri::command]
+pub fn payment_link_to_sale(
+    db: State<DbState>,
+    txn_id: i64,
+    sale_id: i64,
+) -> Result<(), String> {
+    let conn = db.lock();
+    payments::link_to_sale(&conn, txn_id, sale_id).map_err(|e| e.to_string())
+}
+
+/// Get transactions for a sale
+#[tauri::command]
+pub fn payment_get_sale_transactions(
+    db: State<DbState>,
+    sale_id: i64,
+) -> Result<Vec<payments::PaymentTransaction>, String> {
+    let conn = db.lock();
+    payments::get_sale_transactions(&conn, sale_id).map_err(|e| e.to_string())
+}
+
+/// Queue a payment when offline
+#[tauri::command]
+pub fn payment_queue_offline(
+    db: State<DbState>,
+    gateway: String,
+    payload: String,
+) -> Result<i64, String> {
+    let conn = db.lock();
+    payments::queue_payment(&conn, &gateway, &payload).map_err(|e| e.to_string())
+}
+
+/// Get pending offline payments
+#[tauri::command]
+pub fn payment_get_queue(
+    db: State<DbState>,
+) -> Result<Vec<payments::QueuedPayment>, String> {
+    let conn = db.lock();
+    payments::get_pending_queue(&conn).map_err(|e| e.to_string())
+}
+
+/// Get payment method breakdown for reports
+#[tauri::command]
+pub fn payment_method_breakdown(
+    db: State<DbState>,
+    from: String,
+    to: String,
+) -> Result<serde_json::Value, String> {
+    let conn = db.lock();
+    payments::payment_method_breakdown(&conn, &from, &to).map_err(|e| e.to_string())
+}
+
+/// Get gateway transaction summary for reports
+#[tauri::command]
+pub fn payment_gateway_summary(
+    db: State<DbState>,
+    from: String,
+    to: String,
+) -> Result<serde_json::Value, String> {
+    let conn = db.lock();
+    payments::gateway_transaction_summary(&conn, &from, &to).map_err(|e| e.to_string())
+}
