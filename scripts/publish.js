@@ -61,13 +61,13 @@ try {
 // [3] Artifacts dhundho (ZIP ya EXE)
 const bundleDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
 
-let updateArtifactPath = path.join(bundleDir, `ClothingPOS_${semver}_x64-setup.nsis.zip`);
-let updateArtifactName = `ClothingPOS_${semver}_x64-setup.nsis.zip`;
+let updateArtifactPath = path.join(bundleDir, `Grow Sale_${semver}_x64-setup.nsis.zip`);
+let updateArtifactName = `Grow Sale_${semver}_x64-setup.nsis.zip`;
 
 if (!fs.existsSync(updateArtifactPath)) {
   console.log('⚠️  .nsis.zip nahi mili, .exe use kar raha hoon...');
-  updateArtifactPath = path.join(bundleDir, `ClothingPOS_${semver}_x64-setup.exe`);
-  updateArtifactName = `ClothingPOS_${semver}_x64-setup.exe`;
+  updateArtifactPath = path.join(bundleDir, `Grow Sale_${semver}_x64-setup.exe`);
+  updateArtifactName = `Grow Sale_${semver}_x64-setup.exe`;
 }
 
 const sigPath = `${updateArtifactPath}.sig`;
