@@ -1,7 +1,7 @@
 [package]
 name = "pos-clothing"
 version = "0.1.0"
-description = "Clothing Store POS System"
+description = "Grow Sale POS System"
 authors = ["Subhan Faisal"]
 edition = "2021"
 
