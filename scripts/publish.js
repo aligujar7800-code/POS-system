@@ -134,11 +134,11 @@ async function publish() {
 
     // Artifact upload (ZIP ya EXE)
     console.log(`[4] Uploading update artifact: ${updateArtifactName}...`);
-    const uploadedAsset = await ghApi('POST', `${uploadPath}?name=${updateArtifactName}`, fs.readFileSync(updateArtifactPath), true);
+    const uploadedAsset = await ghApi('POST', `${uploadPath}?name=${encodeURIComponent(updateArtifactName)}`, fs.readFileSync(updateArtifactPath), true);
 
     // Signature upload
     console.log(`[5] Uploading signature: ${updateArtifactName}.sig...`);
-    await ghApi('POST', `${uploadPath}?name=${updateArtifactName}.sig`, fs.readFileSync(sigPath), true);
+    await ghApi('POST', `${uploadPath}?name=${encodeURIComponent(updateArtifactName + '.sig')}`, fs.readFileSync(sigPath), true);
 
     const downloadUrl = uploadedAsset.browser_download_url;
 
