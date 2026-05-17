@@ -20,6 +20,7 @@ pub struct Product {
     pub total_stock: i64,
     pub is_active: bool,
     pub article_number: Option<String>,
+    pub product_meta: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -156,6 +157,7 @@ pub struct BulkProductItem {
     pub initial_stock: i64,
     pub barcode: Option<String>,
     pub article_number: Option<String>,
+    pub product_meta: Option<String>,
 }
 
 pub fn create_product(
@@ -238,7 +240,9 @@ pub fn create_bulk_products(
         ) {
             Ok((id, active)) => {
                 if active == 0 {
-                    conn.execute("UPDATE products SET is_active = 1 WHERE id = ?1", params![id])?;
+                    conn.execute("UPDATE products SET is_active = 1, product_meta = COALESCE(?2, product_meta) WHERE id = ?1", params![id, item.product_meta])?;
+                } else if item.product_meta.is_some() {
+                    conn.execute("UPDATE products SET product_meta = ?2 WHERE id = ?1", params![id, item.product_meta])?;
                 }
                 id
             },
@@ -252,9 +256,9 @@ pub fn create_bulk_products(
                     _ => generate_article_number(conn)?,
                 };
                 conn.execute(
-                    "INSERT INTO products (name, sku, barcode, category_id, cost_price, sale_price, article_number, is_active)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
-                    params![item.name, sku, item.barcode, item.category_id, item.cost_price, item.sale_price, article_no],
+                    "INSERT INTO products (name, sku, barcode, category_id, cost_price, sale_price, article_number, is_active, product_meta)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
+                    params![item.name, sku, item.barcode, item.category_id, item.cost_price, item.sale_price, article_no, item.product_meta],
                 )?;
                 conn.last_insert_rowid()
             }
@@ -588,7 +592,8 @@ fn product_select_sql() -> String {
             COALESCE((SELECT SUM(pv.quantity) FROM product_variants pv WHERE pv.product_id = p.id), 0) as total_stock,
             p.is_active,
             NULL as variant_summary,
-            p.article_number
+            p.article_number,
+            p.product_meta
      FROM products p
      LEFT JOIN categories c ON c.id = p.category_id"
         .to_string()
@@ -613,6 +618,7 @@ fn map_product(row: &rusqlite::Row) -> rusqlite::Result<Product> {
         is_active: row.get::<_, i32>(14)? == 1,
         variant_summary: row.get(15)?,
         article_number: row.get(16)?,
+        product_meta: row.get(17)?,
     })
 }
 

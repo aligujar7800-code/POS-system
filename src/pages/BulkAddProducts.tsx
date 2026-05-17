@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { cmd } from '../lib/utils';
 import { useToast } from '../components/ui/Toaster';
 import { ArrowLeft, Plus, Trash2, Save, RefreshCw, Layers } from 'lucide-react';
+import { useBusinessStore } from '../stores/businessStore';
+import ModuleFields from '../components/modules/ModuleFields';
 
 interface Category { id: number; name: string; parent_id?: number | null; }
 
@@ -29,6 +31,7 @@ interface BulkProductGroup {
   main_category_id: string;
   category_id: string;
   sizeGroups: SizeGroup[];
+  product_meta: Record<string, any>;
 }
 
 const emptyColor = (): VariantEntry => ({ color: '', quantity: 0, barcode: '', cost_price: '', sale_price: '' });
@@ -40,7 +43,8 @@ const emptyProduct = (articleNumber: string = ''): BulkProductGroup => ({
   article_number: articleNumber,
   main_category_id: '',
   category_id: '',
-  sizeGroups: [emptySizeGroup()]
+  sizeGroups: [emptySizeGroup()],
+  product_meta: {}
 });
 
 export default function BulkAddProducts() {
@@ -56,6 +60,8 @@ export default function BulkAddProducts() {
     queryKey: ['categories'],
     queryFn: () => cmd('get_all_categories'),
   });
+
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
 
   const mainCategories = categories.filter(c => !c.parent_id);
 
@@ -92,8 +98,15 @@ export default function BulkAddProducts() {
   };
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
   
-  const updateProductInfo = (id: string, field: keyof BulkProductGroup, val: string) => {
+  const updateProductInfo = (id: string, field: keyof BulkProductGroup, val: any) => {
     setProducts(prev => prev.map(p => p.id === id ? { ...p, [field]: val } : p));
+  };
+
+  const updateProductMeta = (id: string, key: string, val: any) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      return { ...p, product_meta: { ...p.product_meta, [key]: val } };
+    }));
   };
 
   const addSizeToProduct = (productId: string) => {
@@ -208,7 +221,8 @@ export default function BulkAddProducts() {
               cost_price: parseFloat(c.cost_price) || 0,
               sale_price: parseFloat(c.sale_price) || 0,
               initial_stock: 0,
-              barcode: c.barcode || null
+              barcode: c.barcode || null,
+              product_meta: Object.keys(p.product_meta || {}).length > 0 ? JSON.stringify(p.product_meta) : null
             });
           }
         });
@@ -334,17 +348,34 @@ export default function BulkAddProducts() {
               </div>
             </div>
 
+            {/* Business Specific Extra Fields */}
+            {activeModule.extraFields && activeModule.extraFields.length > 0 && (
+              <div className="mb-8 pt-4 border-t border-slate-100">
+                <h4 className="text-sm font-bold text-slate-600 mb-4 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-brand-500"></span>
+                  {activeModule.name} Details
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <ModuleFields 
+                    fields={activeModule.extraFields} 
+                    values={p.product_meta || {}} 
+                    onChange={(k, v) => updateProductMeta(p.id, k, v)} 
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {p.sizeGroups.map((group) => (
                 <div key={group.id} className="bg-slate-50 border border-slate-100 rounded-xl overflow-hidden">
                   <div className="bg-slate-100/50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                       <span className="text-[10px] font-black text-slate-400 uppercase">Size:</span>
+                       <span className="text-[10px] font-black text-slate-400 uppercase">{activeModule.variantLabel1 || 'Size'}:</span>
                        <input 
                         value={group.size} 
                         onChange={e => updateSizeInGroup(p.id, group.id, e.target.value)}
                         className="bg-transparent border-0 p-0 w-20 font-bold text-brand-700 focus:ring-0" 
-                        placeholder="M, L..." 
+                        placeholder={activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? 'e.g. 500g' : 'e.g. M, L...'}
                        />
                     </div>
                     <button onClick={() => removeSizeFromProduct(p.id, group.id)} className="text-slate-300 hover:text-red-500">
@@ -353,7 +384,7 @@ export default function BulkAddProducts() {
                   </div>
                   <div className="p-4 space-y-2">
                     <div className="grid grid-cols-[2fr_2fr_0.8fr_1fr_1fr_30px] gap-2 text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">
-                      <div>Color</div>
+                      <div>{activeModule.variantLabel2 || 'Color'}</div>
                       <div>Barcode</div>
                       <div className="text-center">Qty</div>
                       <div className="text-right">Cost</div>
@@ -367,7 +398,7 @@ export default function BulkAddProducts() {
                             value={c.color} 
                             onChange={e => updateColorInGroup(p.id, group.id, cIdx, 'color', e.target.value)}
                             className="input-sm text-xs" 
-                            placeholder="Red" 
+                            placeholder={activeModule.variantLabel2 === 'Color' || !activeModule.variantLabel2 ? 'Red, Blue...' : `${activeModule.variantLabel2}...`}
                           />
                         </div>
                         <div>
@@ -418,7 +449,7 @@ export default function BulkAddProducts() {
                       onClick={() => addColorToGroup(p.id, group.id)}
                       className="w-full py-1.5 mt-2 border border-dashed border-slate-200 rounded text-[10px] font-bold text-slate-400 hover:text-brand-600 hover:bg-white transition-all"
                     >
-                      + Color for {group.size || 'Size'}
+                      + {activeModule.variantLabel2 || 'Color'} for {group.size || activeModule.variantLabel1 || 'Size'}
                     </button>
                   </div>
                 </div>
@@ -427,7 +458,7 @@ export default function BulkAddProducts() {
                 onClick={() => addSizeToProduct(p.id)}
                 className="flex items-center justify-center p-6 border-2 border-dashed border-slate-100 rounded-xl text-slate-400 hover:bg-slate-50 hover:border-brand-200 hover:text-brand-600 transition-all text-xs font-bold"
               >
-                <Plus className="w-5 h-5 mr-2" /> Add Size Group for {p.name || 'this product'}
+                <Plus className="w-5 h-5 mr-2" /> Add {activeModule.variantLabel1 || 'Size'} Group for {p.name || 'this product'}
               </button>
             </div>
           </div>

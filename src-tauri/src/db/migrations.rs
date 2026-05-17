@@ -105,8 +105,20 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_version VALUES (17)", [])?;
     }
 
+    if current_version < 18 {
+        let _ = conn.execute_batch(MIGRATION_V18);
+        conn.execute("INSERT INTO schema_version VALUES (18)", [])?;
+    }
+
     Ok(())
 }
+
+const MIGRATION_V18: &str = "
+-- Multi-business module support: store business type and module-specific metadata
+INSERT OR IGNORE INTO settings (key, value) VALUES ('business_type', 'clothing');
+ALTER TABLE products ADD COLUMN product_meta TEXT;
+ALTER TABLE sale_items ADD COLUMN item_meta TEXT;
+";
 
 const MIGRATION_V13: &str = "
 -- Add unit_cost to stock_history for accurate historical cost tracking

@@ -4,9 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cmd, cn } from '../lib/utils';
 import { useToast } from '../components/ui/Toaster';
-import { ArrowLeft, Plus, Trash2, RefreshCw, Package } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, RefreshCw, Package, Puzzle } from 'lucide-react';
 import Barcode from 'react-barcode';
 import { backgroundSyncProduct, isShopifyConfigured } from '../lib/shopify';
+import { useBusinessStore } from '../stores/businessStore';
+import ModuleFields from '../components/modules/ModuleFields';
 
 interface Category { id: number; name: string; parent_id?: number | null; }
 interface VariantEntry {
@@ -46,6 +48,10 @@ export default function ProductForm() {
   const [sizeGroups, setSizeGroups] = useState<SizeGroup[]>([emptySizeGroup()]);
   const [saving, setSaving]     = useState(false);
 
+  // Module system: get active business module
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
+  const [productMeta, setProductMeta] = useState<Record<string, any>>({});
+
   // Fetch product data if editing
   const { data: productData } = useQuery({
     queryKey: ['product', id],
@@ -71,6 +77,10 @@ export default function ProductForm() {
       setDesc(productData.description || '');
       setTaxPct(productData.tax_percent?.toString() || '0');
       setLowStock(productData.low_stock_threshold?.toString() || '5');
+      // Load module-specific metadata
+      if (productData.product_meta) {
+        try { setProductMeta(JSON.parse(productData.product_meta)); } catch { setProductMeta({}); }
+      }
     }
   }, [isEdit, productData]);
 
@@ -175,6 +185,7 @@ export default function ProductForm() {
         sale_price: sizeGroups[0]?.colors[0]?.sale_price ? parseFloat(sizeGroups[0].colors[0].sale_price) : 0,
         tax_percent: parseFloat(taxPct) || 0,
         low_stock_threshold: parseInt(lowStock) || 5,
+        product_meta: Object.keys(productMeta).length > 0 ? JSON.stringify(productMeta) : null,
       };
 
       // Flatten size groups into variants
@@ -291,18 +302,34 @@ export default function ProductForm() {
             </div>
           </div>
 
+          {/* Module-specific extra fields */}
+          {activeModule.extraFields.length > 0 && (
+            <div className="card p-6">
+              <div className="flex items-center gap-2 mb-4 text-purple-600">
+                <Puzzle className="w-5 h-5" />
+                <h2 className="font-bold text-lg">{activeModule.name} Details</h2>
+              </div>
+              <ModuleFields
+                fields={activeModule.extraFields}
+                values={productMeta}
+                onChange={(key, value) => setProductMeta(prev => ({ ...prev, [key]: value }))}
+                readOnly={false}
+              />
+            </div>
+          )}
+
           {/* Hierarchical Variants */}
           <div className="card p-6 bg-slate-50/50">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="font-bold text-lg text-slate-800">Sizes & Color Varieties</h2>
+                <h2 className="font-bold text-lg text-slate-800">{activeModule.variantLabel1 || 'Size'} & {activeModule.variantLabel2 || 'Color'} Varieties</h2>
                 <p className="text-sm text-slate-500">
-                  {isEdit ? 'Current stock levels for each variety.' : 'Group your stock by size and add multiple colors for each.'}
+                  {isEdit ? 'Current stock levels for each variety.' : `Group your stock by ${(activeModule.variantLabel1 || 'size').toLowerCase()} and add multiple ${(activeModule.variantLabel2 || 'color').toLowerCase()}s for each.`}
                 </p>
               </div>
               {!isEdit && (
                 <button onClick={addSizeGroup} className="btn-secondary">
-                  <Plus className="w-4 h-4" /> Add New Size
+                  <Plus className="w-4 h-4" /> Add New {activeModule.variantLabel1 || 'Size'}
                 </button>
               )}
             </div>
@@ -312,13 +339,13 @@ export default function ProductForm() {
                 <div key={group.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                   <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Size:</span>
+                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{activeModule.variantLabel1 || 'Size'}:</span>
                       <input 
                         value={group.size} 
                         readOnly={isEdit}
                         onChange={(e) => updateSizeInGroup(group.id, e.target.value)}
                         className={cn("bg-transparent border-none focus:ring-0 font-bold text-brand-700 w-24 p-0", isEdit && "cursor-not-allowed")}
-                        placeholder="M, L, XL..."
+                        placeholder={activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? 'e.g. 500g' : 'e.g. M, L, XL...'}
                       />
                     </div>
                     {!isEdit && (
@@ -330,7 +357,7 @@ export default function ProductForm() {
                   
                   <div className="p-4 space-y-3">
                     <div className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter px-1">
-                      <div>Color</div>
+                      <div>{activeModule.variantLabel2 || 'Color'}</div>
                       <div className="text-center">Qty</div>
                       <div>Barcode</div>
                       <div className="text-right">Cost</div>
@@ -341,7 +368,7 @@ export default function ProductForm() {
                     {group.colors.map((c, idx) => (
                       <div key={idx} className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-2 items-center">
                         <div>
-                          <input value={c.color} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'color', e.target.value)} className={cn("input-sm", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="Black, Navy..." />
+                          <input value={c.color} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'color', e.target.value)} className={cn("input-sm", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder={activeModule.variantLabel2 === 'Color' || !activeModule.variantLabel2 ? 'Black, Navy...' : `${activeModule.variantLabel2}...`} />
                         </div>
                         <div title="Stock cannot be edited manually. Use Inward or Stock Adjustment to change quantities.">
                           <input type="number" value={isEdit ? c.quantity : 0} readOnly disabled className={cn("input-sm text-center font-bold bg-slate-50 cursor-not-allowed", !isEdit && "text-slate-400")} min={0} />
@@ -370,7 +397,7 @@ export default function ProductForm() {
                         onClick={() => addColorToGroup(group.id)}
                         className="w-full py-2 mt-2 border border-dashed border-slate-200 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-brand-600 transition-all flex items-center justify-center gap-1"
                       >
-                        <Plus className="w-3 h-3" /> Add Another Color for {group.size || 'this size'}
+                        <Plus className="w-3 h-3" /> Add Another {activeModule.variantLabel2 || 'Color'} for {group.size || `this ${(activeModule.variantLabel1 || 'size').toLowerCase()}`}
                       </button>
                     )}
                   </div>

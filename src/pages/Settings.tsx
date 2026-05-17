@@ -6,8 +6,9 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toaster';
-import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X } from 'lucide-react';
+import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X, Briefcase } from 'lucide-react';
 import ImportWizard from '../components/ImportWizard';
+import BusinessTypeSelector from '../components/modules/BusinessTypeSelector';
 import { save } from '@tauri-apps/plugin-dialog';
 
 import jazzcashLogo from '../assets/jazzcash.png';
@@ -15,7 +16,7 @@ import easypaisaLogo from '../assets/easypaisa.png';
 import hblLogo from '../assets/hbl.png';
 import stripeLogo from '../assets/stripe.png';
 
-type Tab = 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license';
+type Tab = 'business' | 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license';
 type IntegrationView = 'list' | 'shopify' | 'google' | 'cloudsync';
 
 interface CloudSyncStatus {
@@ -583,6 +584,7 @@ export default function SettingsPage() {
   };
 
   const tabs: [Tab, string, React.ReactNode][] = [
+    ['business', 'Business Type', <Briefcase className="w-4 h-4" />],
     ['shop', t('settings.shopInfo'), <Store className="w-4 h-4" />],
     ['receipt', t('settings.receipt'), <Settings className="w-4 h-4" />],
     ['tax', t('settings.taxSettings'), <Settings className="w-4 h-4" />],
@@ -637,6 +639,13 @@ export default function SettingsPage() {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
+          {/* Business Type */}
+          {tab === 'business' && (
+            <div className="card p-6 max-w-4xl">
+              <BusinessTypeSelector />
+            </div>
+          )}
+
           {/* Shop Info */}
           {tab === 'shop' && (
             <div className="card p-6 space-y-4 max-w-xl">

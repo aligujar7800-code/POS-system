@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
+import { useBusinessStore } from './stores/businessStore';
 import AppShell from './components/Layout/AppShell';
 import LoginPage from './pages/Login';
 import LicenseGate from './components/LicenseGate';
@@ -63,6 +64,7 @@ function ProtectedRoute({ children, permission }: { children: React.ReactNode; p
 export default function App() {
   const { user } = useAuthStore();
   const { language, setSettings } = useSettingsStore();
+  const { setBusinessType } = useBusinessStore();
   const { i18n } = useTranslation();
 
   // Load settings from DB on startup
@@ -87,6 +89,9 @@ export default function App() {
             printer_baud: parseInt(dbSettings.printer_baud) || 9600,
             language: dbSettings.language || 'en',
           });
+          if (dbSettings.business_type) {
+            setBusinessType(dbSettings.business_type);
+          }
         }
       } catch (e) {
         console.error('Failed to sync settings from DB:', e);

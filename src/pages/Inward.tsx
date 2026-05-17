@@ -12,6 +12,7 @@ import { backgroundSyncInventory, isShopifyConfigured } from '../lib/shopify';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../components/ui/Toaster';
 import AdminConfirmModal from '../components/ui/AdminConfirmModal';
+import { useBusinessStore } from '../stores/businessStore';
 
 
 
@@ -49,6 +50,7 @@ export default function InwardPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { currency_symbol } = useSettingsStore();
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
 
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
   const [showClearHistoryModal, setShowClearHistoryModal] = useState(false);
@@ -360,8 +362,8 @@ export default function InwardPage() {
 
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 100px 80px', gap: 8, fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8, padding: '0 4px' }}>
-                    <div>Size</div>
-                    <div>Color</div>
+                    <div>{activeModule.variantLabel1 || 'Size'}</div>
+                    <div>{activeModule.variantLabel2 || 'Color'}</div>
                     <div>Cost Price</div>
                     <div>Sale Price</div>
                     <div style={{ textAlign: 'center' }}>Receive Qty</div>
@@ -398,7 +400,7 @@ export default function InwardPage() {
 
                   {!showAddVariant && (
                     <button onClick={() => setShowAddVariant(true)} style={{ marginTop: 12, padding: '8px 0', width: '100%', background: 'transparent', border: '1px dashed #cbd5e1', borderRadius: 8, color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                      + Receive a completely new Size/Color for this product
+                      + Receive a completely new {activeModule.variantLabel1 || 'Size'}/{activeModule.variantLabel2 || 'Color'} for this product
                     </button>
                   )}
 
@@ -406,8 +408,8 @@ export default function InwardPage() {
                     <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', border: '1px dashed #fca5a5', borderRadius: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>New Variation</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 100px 80px', gap: 8, alignItems: 'center' }}>
-                        <input placeholder="Size (eg XL)" value={newSize} onChange={e => setNewSize(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
-                        <input placeholder="Color (eg Red)" value={newColor} onChange={e => setNewColor(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
+                        <input placeholder={`${activeModule.variantLabel1 || 'Size'} (eg ${activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? '500g' : 'XL'})`} value={newSize} onChange={e => setNewSize(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
+                        <input placeholder={`${activeModule.variantLabel2 || 'Color'} (eg ${activeModule.variantLabel2 === 'Color' || !activeModule.variantLabel2 ? 'Red' : 'Type'})`} value={newColor} onChange={e => setNewColor(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
                         <input type="number" placeholder="Cost" value={newCost} onChange={e => setNewCost(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
                         <input type="number" placeholder="Sale" value={newSale} onChange={e => setNewSale(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
                         <input type="number" placeholder="0" value={newQuantity} onChange={e => setNewQuantity(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '2px solid #ef4444', fontSize: 14, fontWeight: 700, textAlign: 'center' }} />

@@ -18,6 +18,7 @@ export interface CartItem {
   discount: number;       // absolute amount
   discount_type: 'amount' | 'percent';
   total_price: number;
+  item_meta?: Record<string, any>;
 }
 
 interface CartDiscount {
@@ -34,6 +35,7 @@ interface CartState {
   removeItem: (index: number) => void;
   updateQty: (index: number, qty: number) => void;
   updateItemDiscount: (index: number, discount: number, type: 'amount' | 'percent') => void;
+  updateItemMeta: (index: number, key: string, value: any) => void;
   setCustomer: (customer: Customer | null) => void;
   setCartDiscount: (discount: CartDiscount) => void;
   clearCart: () => void;
@@ -90,14 +92,23 @@ export const useCartStore = create<CartState>()((set, get) => ({
       return { items: updated };
     }),
 
-  updateItemDiscount: (index, discount, type) =>
-    set((state) => {
-      const updated = [...state.items];
-      const item = { ...updated[index], discount, discount_type: type };
-      item.total_price = calcItemTotal(item);
-      updated[index] = item;
-      return { items: updated };
-    }),
+  updateItemDiscount: (index, discount, type) => {
+    const items = [...get().items];
+    if (items[index]) {
+      items[index].discount = discount;
+      items[index].discount_type = type;
+      items[index].total_price = calcItemTotal(items[index]);
+      set({ items });
+    }
+  },
+
+  updateItemMeta: (index: number, key: string, value: any) => {
+    const items = [...get().items];
+    if (items[index]) {
+      items[index].item_meta = { ...items[index].item_meta, [key]: value };
+      set({ items });
+    }
+  },
 
   setCustomer: (customer) => set({ customer }),
   setCartDiscount: (cartDiscount) => set({ cartDiscount }),

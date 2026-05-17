@@ -10,6 +10,8 @@ import BarcodeModal from '../components/ui/BarcodeModal';
 import BatchBarcodeModal from '../components/ui/BatchBarcodeModal';
 import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw, ShoppingBag } from 'lucide-react';
 import { syncProductToShopify } from '../lib/shopify';
+import { useBusinessStore } from '../stores/businessStore';
+import { ModuleInventoryValue } from '../components/modules/ModuleFields';
 
 interface Product {
   id: number; name: string; sku: string; barcode?: string;
@@ -35,6 +37,10 @@ export default function InventoryPage() {
   const { t } = useTranslation();
   const { currency_symbol } = useSettingsStore();
   const fmt = (n: number) => formatCurrency(n, currency_symbol);
+
+  // Module system
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
+  const moduleColumns = activeModule.inventoryColumns || [];
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
@@ -234,6 +240,9 @@ export default function InventoryPage() {
               <th>SKU / Barcode</th>
               <th>Category</th>
               <th>Variants & Prices</th>
+              {moduleColumns.map(col => (
+                <th key={col.key} style={col.width ? { width: col.width } : undefined}>{col.label}</th>
+              ))}
               <th>Stock</th>
               <th>Actions</th>
             </tr>
@@ -274,6 +283,15 @@ export default function InventoryPage() {
                       {expandedProductId === p.id ? 'Close Details' : 'View Variants'}
                     </div>
                   </td>
+                  {moduleColumns.map(col => {
+                    let meta: Record<string, any> = {};
+                    try { if ((p as any).product_meta) meta = JSON.parse((p as any).product_meta); } catch {}
+                    return (
+                      <td key={col.key}>
+                        <ModuleInventoryValue value={meta[col.key]} render={col.render} badgeColors={col.badgeColors} />
+                      </td>
+                    );
+                  })}
                   <td>{stockBadge(p)}</td>
                   <td>
                     <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>

@@ -145,6 +145,42 @@ pub fn validate_rows(
             }
         }
 
+        // Validate meta fields
+        if let Some(&idx) = col_map.get("meta:imei_number") {
+            let val = row.get(idx).map(|s| s.trim()).unwrap_or("");
+            if !val.is_empty() && (val.len() != 15 || !val.chars().all(char::is_numeric)) {
+                errors.push(ValidationError {
+                    row_number: r,
+                    field: "IMEI Number".into(),
+                    error_type: "invalid".into(),
+                    message: format!("Row {} IMEI must be exactly 15 digits: '{}'", r, val),
+                });
+            }
+        }
+
+        if let Some(&idx) = col_map.get("meta:expiry_date") {
+            let val = row.get(idx).map(|s| s.trim()).unwrap_or("");
+            if !val.is_empty() {
+                let parts: Vec<&str> = val.split(|c| c == '-' || c == '/').collect();
+                let is_valid = if parts.len() == 3 {
+                    let (p0, p1, p2) = (parts[0].len(), parts[1].len(), parts[2].len());
+                    // DD-MM-YYYY or YYYY-MM-DD
+                    (p0 == 2 && p1 == 2 && p2 == 4) || (p0 == 4 && p1 == 2 && p2 == 2)
+                } else {
+                    false
+                };
+                
+                if !is_valid {
+                    errors.push(ValidationError {
+                        row_number: r,
+                        field: "Expiry Date".into(),
+                        error_type: "invalid".into(),
+                        message: format!("Row {} Expiry Date must be DD-MM-YYYY or YYYY-MM-DD: '{}'", r, val),
+                    });
+                }
+            }
+        }
+
         // Duplicate barcode detection within the file
         if let Some(&idx) = barcode_idx {
             let val = row.get(idx).map(|s| s.trim().to_string()).unwrap_or_default();
@@ -206,6 +242,16 @@ pub fn execute_import(
     let color_idx = col_map.get("Color").copied();
     let desc_idx = col_map.get("Description").copied();
     let article_idx = col_map.get("ArticleNumber").copied();
+
+    let mut meta_mappings: Vec<(String, usize)> = Vec::new();
+    for m in &config.mappings {
+        if m.target_field.starts_with("meta:") {
+            if let Some(&idx) = col_map.get(&m.target_field) {
+                let key = m.target_field.trim_start_matches("meta:").to_string();
+                meta_mappings.push((key, idx));
+            }
+        }
+    }
 
     let mut imported = 0usize;
     let mut skipped = 0usize;
@@ -324,11 +370,24 @@ pub fn execute_import(
                 (None, None)
             };
 
+            // Build product_meta JSON
+            let mut meta_json = serde_json::Map::new();
+            for (key, idx) in &meta_mappings {
+                if let Some(val) = get_val(row, Some(*idx)) {
+                    meta_json.insert(key.clone(), serde_json::Value::String(val));
+                }
+            }
+            let product_meta_str = if meta_json.is_empty() {
+                None
+            } else {
+                Some(serde_json::Value::Object(meta_json).to_string())
+            };
+
             // Insert product
             match tx.execute(
-                "INSERT INTO products (name, sku, barcode, category_id, brand, description, cost_price, sale_price, tax_percent, low_stock_threshold, is_active, article_number)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 5, 1, ?9)",
-                params![product_name, final_sku, final_barcode, category_id, brand, description, cost, price, final_article],
+                "INSERT INTO products (name, sku, barcode, category_id, brand, description, cost_price, sale_price, tax_percent, low_stock_threshold, is_active, article_number, product_meta)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 5, 1, ?9, ?10)",
+                params![product_name, final_sku, final_barcode, category_id, brand, description, cost, price, final_article, product_meta_str],
             ) {
                 Ok(_) => {
                     let product_id = tx.last_insert_rowid();

@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { cmd } from '../lib/utils';
 import { useToast } from '../components/ui/Toaster';
+import { useBusinessStore } from '../stores/businessStore';
 import { Upload, FileSpreadsheet, Database, ChevronRight, ChevronLeft, Check, AlertTriangle, Loader2, RotateCcw, X, ArrowDownToLine } from 'lucide-react';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
@@ -22,6 +23,7 @@ const TARGET_FIELDS = [
 
 export default function ImportWizard() {
   const { toast } = useToast();
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
   const [step, setStep] = useState<Step>(1);
   const [fileType, setFileType] = useState<FileType | null>(null);
   const [filePath, setFilePath] = useState('');
@@ -38,6 +40,14 @@ export default function ImportWizard() {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [selectedTable, setSelectedTable] = useState('');
   const [history, setHistory] = useState<any[]>([]);
+
+  const combinedFields = [
+    ...TARGET_FIELDS,
+    ...(activeModule.extraFields?.map(f => ({
+      value: `meta:${f.key}`,
+      label: `${activeModule.name}: ${f.label}`
+    })) || [])
+  ];
 
   // File picker
   const pickFile = useCallback(async () => {
@@ -61,19 +71,36 @@ export default function ImportWizard() {
     } catch (e: any) { toast(String(e), 'error'); }
   }, [fileType, toast]);
 
-  // Detect schema
   const detectSchema = useCallback(async () => {
     if (!filePath) return;
     setLoading(true);
     try {
       const res = await cmd<any>('import_detect_schema', { filePath, fileType, tableName: selectedTable || undefined });
+      
+      // Post-process to auto-detect business specific extra fields
+      const updatedMappings = res.mappings.map((m: Mapping) => {
+        if (m.detected_field === 'Ignore' || m.confidence < 50) {
+          const cleanSource = m.source_column.toLowerCase().replace(/[^a-z0-9]/g, '');
+          for (const f of activeModule.extraFields || []) {
+            const cleanTarget = f.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const cleanKey = f.key.toLowerCase().replace(/[^a-z0-9]/g, '');
+            // If source matches target label or key closely
+            if (cleanSource === cleanTarget || cleanSource === cleanKey || 
+               (cleanSource.length > 3 && (cleanSource.includes(cleanTarget) || cleanTarget.includes(cleanSource)))) {
+              return { ...m, detected_field: `meta:${f.key}`, confidence: 0.85, detection_method: 'auto_extra' };
+            }
+          }
+        }
+        return m;
+      });
+
       setColumns(res.columns);
       setTotalRows(res.total_rows);
-      setMappings(res.mappings);
+      setMappings(updatedMappings);
       setStep(3);
     } catch (e: any) { toast(String(e), 'error'); }
     setLoading(false);
-  }, [filePath, fileType, selectedTable, toast]);
+  }, [filePath, fileType, selectedTable, toast, activeModule]);
 
   // Preview + Validate
   const runPreview = useCallback(async () => {
@@ -248,7 +275,7 @@ export default function ImportWizard() {
                 <tbody>{mappings.map((m, i) => (
                   <tr key={i} className="border-t hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-mono text-xs font-medium">{m.source_column}</td>
-                    <td className="px-4 py-2.5 font-semibold text-indigo-700 text-xs">{TARGET_FIELDS.find(f => f.value === m.detected_field)?.label || m.detected_field}</td>
+                    <td className="px-4 py-2.5 font-semibold text-indigo-700 text-xs">{combinedFields.find(f => f.value === m.detected_field)?.label || m.detected_field}</td>
                     <td className="px-4 py-2.5 text-center">{confBadge(m.confidence)}</td>
                     <td className="px-4 py-2.5 text-xs text-slate-400 truncate max-w-[200px]">{m.sample_values.slice(0, 3).join(', ')}</td>
                   </tr>
@@ -276,7 +303,7 @@ export default function ImportWizard() {
                 <select value={m.detected_field} onChange={e => {
                   const updated = [...mappings]; updated[i] = { ...m, detected_field: e.target.value, confidence: 1.0, detection_method: 'manual' }; setMappings(updated);
                 }} className="flex-1 text-sm border rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-indigo-300 outline-none">
-                  {TARGET_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  {combinedFields.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
                 {confBadge(m.confidence)}
               </div>

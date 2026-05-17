@@ -11,6 +11,8 @@ import { SaleDetailsModal } from './Receipts';
 import { useBarcode, useGlobalBarcode } from '../hooks/useBarcode';
 import { useToast } from '../components/ui/Toaster';
 import PaymentFlowModal from '../components/ui/PaymentFlowModal';
+import { useBusinessStore } from '../stores/businessStore';
+import ModuleFields from '../components/modules/ModuleFields';
 import jazzcashLogo from '../assets/jazzcash.png';
 import easypaisaLogo from '../assets/easypaisa.png';
 import hblLogo from '../assets/hbl.png';
@@ -95,12 +97,14 @@ function ProductCard({ product, onAdd }: { product: Product; onAdd: (p: Product)
 }
 
 // ─── Cart Item row ─────────────────────────────────────────────────────────────
-function CartRow({ idx, item, onQty, onRemove, onDiscount }: {
+function CartRow({ idx, item, onQty, onRemove, onDiscount, onUpdateMeta, cartFields }: {
   idx: number;
   item: any;
   onQty: (i: number, q: number) => void;
   onRemove: (i: number) => void;
   onDiscount: (i: number, v: number, t: 'amount' | 'percent') => void;
+  onUpdateMeta: (i: number, k: string, v: any) => void;
+  cartFields: any[];
 }) {
   const { currency_symbol } = useSettingsStore();
   const [showDisc, setShowDisc] = useState(false);
@@ -166,6 +170,18 @@ function CartRow({ idx, item, onQty, onRemove, onDiscount }: {
           >Apply</button>
         </div>
       )}
+
+      {/* Module specific cart fields */}
+      {cartFields.length > 0 && (
+        <div className="px-3 pb-2 pt-1 border-t border-slate-50 mt-1 bg-slate-50/50">
+          <ModuleFields
+            fields={cartFields}
+            values={item.item_meta || {}}
+            onChange={(key, val) => onUpdateMeta(idx, key, val)}
+            compact
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -198,6 +214,10 @@ export default function SalesPage() {
   const [showVariants, setShowVariants] = useState<Product | null>(null);
   const [showPaymentFlow, setShowPaymentFlow] = useState<'jazzcash' | 'easypaisa' | 'hbl_pay' | 'stripe' | null>(null);
   const [pendingGatewayTxnId, setPendingGatewayTxnId] = useState<number | null>(null);
+  const [globalSaleMeta, setGlobalSaleMeta] = useState<Record<string, any>>({});
+
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
+  const globalSaleFields = activeModule.saleFields.filter(f => !f.showInCart);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -369,6 +389,9 @@ export default function SalesPage() {
         paymentMethod === 'udhaar' ? 'udhaar' :
         paid < total ? 'partial' : 'paid';
 
+      const metaNotes = Object.keys(globalSaleMeta).length > 0 ? Object.entries(globalSaleMeta).map(([k, v]) => `${k}: ${v}`).join(' | ') : null;
+      const finalNotes = [saleNotes, metaNotes].filter(Boolean).join('\n');
+
       const [id, invoice] = await cmd<[number, string]>('create_sale', {
         payload: {
           customer_id: cart.customer?.id ?? null,
@@ -381,6 +404,7 @@ export default function SalesPage() {
             unit_price: i.unit_price,
             discount: i.discount,
             total_price: i.total_price,
+            item_meta: i.item_meta && Object.keys(i.item_meta).length > 0 ? JSON.stringify(i.item_meta) : null,
           })),
           subtotal,
           discount_amount: totalDiscount,
@@ -391,7 +415,7 @@ export default function SalesPage() {
           change_amount: change,
           payment_method: paymentMethod,
           status,
-          notes: saleNotes || null,
+          notes: finalNotes || null,
           created_by: user?.id ?? null,
         }
       });
@@ -522,6 +546,8 @@ export default function SalesPage() {
                 onQty={cart.updateQty}
                 onRemove={cart.removeItem}
                 onDiscount={cart.updateItemDiscount}
+                onUpdateMeta={cart.updateItemMeta}
+                cartFields={activeModule.saleFields.filter(f => f.showInCart)}
               />
             ))
           )}
@@ -752,6 +778,20 @@ export default function SalesPage() {
             placeholder="Notes (optional)"
             className="input text-xs mt-2 h-16 resize-none"
           />
+
+          {globalSaleFields.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100 bg-slate-50 -mx-4 px-4 pb-3">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
+                {activeModule.name} Details
+              </p>
+              <ModuleFields
+                fields={globalSaleFields}
+                values={globalSaleMeta}
+                onChange={(key, val) => setGlobalSaleMeta(prev => ({ ...prev, [key]: val }))}
+                compact
+              />
+            </div>
+          )}
         </div>
 
         {/* Complete Sale */}
@@ -892,6 +932,10 @@ export default function SalesPage() {
             // Now create the sale with gateway payment method
             setCompleting(true);
             try {
+              const metaNotes = Object.keys(globalSaleMeta).length > 0 ? Object.entries(globalSaleMeta).map(([k, v]) => `${k}: ${v}`).join(' | ') : null;
+              const gatewayNote = gatewayRef ? `Gateway Ref: ${gatewayRef || txnId}` : `Gateway Ref: ${txnId}`;
+              const finalNotes = [saleNotes, metaNotes, gatewayNote].filter(Boolean).join('\n');
+
               const [id, invoice] = await cmd<[number, string]>('create_sale', {
                 payload: {
                   customer_id: cart.customer?.id ?? null,
@@ -904,6 +948,7 @@ export default function SalesPage() {
                     unit_price: i.unit_price,
                     discount: i.discount,
                     total_price: i.total_price,
+                    item_meta: i.item_meta && Object.keys(i.item_meta).length > 0 ? JSON.stringify(i.item_meta) : null,
                   })),
                   subtotal,
                   discount_amount: totalDiscount,
@@ -914,7 +959,7 @@ export default function SalesPage() {
                   change_amount: 0,
                   payment_method: paymentMethod,
                   status: 'paid',
-                  notes: saleNotes ? `${saleNotes} | Gateway Ref: ${gatewayRef || txnId}` : `Gateway Ref: ${gatewayRef || txnId}`,
+                  notes: finalNotes || null,
                   created_by: user?.id ?? null,
                 }
               });
