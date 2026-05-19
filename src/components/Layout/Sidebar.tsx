@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import growsaleLogo from '../../assets/logo.png';
 
 interface NavItemConfig {
   to: string;
@@ -87,8 +88,8 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-5 border-b border-slate-700/50">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center flex-shrink-0">
-            <Store className="w-4 h-4 text-white" />
+          <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0">
+            <img src={growsaleLogo} className="w-full h-full object-contain" alt="Grow Sale logo" />
           </div>
           {!isCollapsed && (
             <div className="min-w-0 transition-opacity duration-200">

@@ -15,6 +15,7 @@ import jazzcashLogo from '../assets/jazzcash.png';
 import easypaisaLogo from '../assets/easypaisa.png';
 import hblLogo from '../assets/hbl.png';
 import stripeLogo from '../assets/stripe.png';
+import growsaleLogo from '../assets/logo.png';
 
 type Tab = 'business' | 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license';
 type IntegrationView = 'list' | 'shopify' | 'google' | 'cloudsync';
@@ -113,7 +114,7 @@ export default function SettingsPage() {
   const [cloudLoadingBackups, setCloudLoadingBackups] = useState(false);
   const [cloudQueueCount, setCloudQueueCount] = useState(0);
 
-  // Cloud Sync (Supabase) state
+  // Connect APP (Supabase) state
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus | null>(null);
   const [syncConnecting, setSyncConnecting] = useState(false);
   const [syncSyncing, setSyncSyncing] = useState(false);
@@ -197,13 +198,13 @@ export default function SettingsPage() {
     }
   }, [currentUser]);
 
-  // Load Cloud Sync status
+  // Load Connect APP status
   const loadSyncStatus = useCallback(async () => {
     try {
       const status = await cmd<CloudSyncStatus>('cloud_sync_status');
       setSyncStatus(status);
     } catch (e) {
-      console.warn('Failed to load cloud sync status:', e);
+      console.warn('Failed to load Connect APP status:', e);
     }
   }, []);
 
@@ -219,21 +220,21 @@ export default function SettingsPage() {
     setSyncConnecting(true);
     try {
       const result = await cmd<any>('cloud_sync_connect');
-      toast(`Cloud Sync connected! Store: ${result.store_name}`, 'success');
+      toast(`Connect APP connected! Store: ${result.store_name}`, 'success');
       loadSyncStatus();
     } catch (e: any) {
-      toast('Cloud Sync connection failed: ' + e.toString(), 'error');
+      toast('Connect APP connection failed: ' + e.toString(), 'error');
     } finally {
       setSyncConnecting(false);
     }
   };
 
   const disconnectCloudSync = async () => {
-    if (!window.confirm('Disconnect Cloud Sync? Your data will stop syncing to the cloud.')) return;
+    if (!window.confirm('Disconnect Connect APP? Your data will stop syncing to the cloud.')) return;
     try {
       await cmd('cloud_sync_disconnect');
       setSyncStatus({ connected: false });
-      toast('Cloud Sync disconnected', 'success');
+      toast('Connect APP disconnected', 'success');
     } catch (e: any) {
       toast(e.toString(), 'error');
     }
@@ -1294,23 +1295,19 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   </div>
-                  {/* Cloud Sync Card */}
+                  {/* Connect APP Card */}
                   <div 
                     onClick={() => setIntegrationView('cloudsync')}
-                    className="group relative overflow-hidden bg-white rounded-3xl border border-slate-200 p-8 cursor-pointer transition-all hover:border-purple-300 hover:shadow-2xl hover:shadow-purple-100/50"
+                    className="group relative overflow-hidden bg-white rounded-3xl border border-slate-200 p-8 cursor-pointer transition-all hover:border-brand-300 hover:shadow-2xl hover:shadow-brand-100/30"
                   >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
                     <div className="relative">
-                      <div className="w-16 h-16 mb-6 rounded-2xl bg-white shadow-lg flex items-center justify-center border border-slate-100">
-                        <svg className="w-10 h-10" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M12 2L2 7l10 5 10-5-10-5z" fill="#8B5CF6" opacity="0.8"/>
-                          <path d="M2 17l10 5 10-5" stroke="#8B5CF6" strokeWidth="2" fill="none"/>
-                          <path d="M2 12l10 5 10-5" stroke="#A78BFA" strokeWidth="2" fill="none"/>
-                        </svg>
+                      <div className="w-16 h-16 mb-6 rounded-2xl bg-white shadow-lg flex items-center justify-center border border-slate-100 overflow-hidden p-1 group-hover:scale-105 transition-transform duration-300">
+                        <img src={growsaleLogo} className="w-full h-full object-contain" alt="Grow Sale logo" />
                       </div>
-                      <h3 className="text-xl font-bold text-slate-800 mb-2">Cloud Sync</h3>
+                      <h3 className="text-xl font-bold text-slate-800 mb-2">Connect APP</h3>
                       <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-                        Real-time sync to Supabase cloud. View live sales, customers & reports from your mobile app.
+                        Real-time sync to Grow Sale cloud. View live sales, customers & reports from your mobile app.
                       </p>
                       <div className="flex items-center gap-2">
                         {syncStatus?.connected ? (
@@ -1318,8 +1315,8 @@ export default function SettingsPage() {
                             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> Connected
                           </span>
                         ) : (
-                          <span className="flex items-center gap-2 text-purple-600 font-bold text-xs uppercase tracking-wider">
-                            Configure Sync <Plus className="w-3 h-3" />
+                          <span className="flex items-center gap-2 text-brand-600 font-bold text-xs uppercase tracking-wider">
+                            Configure Connect APP <Plus className="w-3 h-3" />
                           </span>
                         )}
                       </div>
@@ -1912,7 +1909,7 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* Cloud Sync Inner View */}
+              {/* Connect APP Inner View */}
               {integrationView === 'cloudsync' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                   <div className="space-y-6 max-w-2xl">
@@ -1920,28 +1917,29 @@ export default function SettingsPage() {
                     {/* Connection Card */}
                     <div className="card p-6">
                       <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-5">
-                        <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
-                          <Cloud className="w-5 h-5" />
+                        <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center p-0.5 shadow-sm">
+                          <img src={growsaleLogo} className="w-full h-full object-contain" alt="Grow Sale logo" />
                         </div>
                         <div>
-                          <h2 className="font-semibold text-slate-800">Cloud Sync — Supabase</h2>
+                          <h2 className="font-semibold text-slate-800">Connect APP</h2>
                           <p className="text-sm text-slate-500">Real-time data sync for your mobile dashboard</p>
                         </div>
                       </div>
 
                       {!syncStatus?.connected ? (
                         <div className="text-center py-8">
-                          <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-gradient-to-br from-purple-100 to-indigo-100 flex items-center justify-center">
-                            <CloudUpload className="w-10 h-10 text-purple-600" />
+                          <div className="w-24 h-24 mx-auto mb-6 rounded-3xl bg-white shadow-xl border border-slate-100 flex items-center justify-center p-2 relative overflow-hidden group">
+                            <div className="absolute inset-0 bg-gradient-to-tr from-brand-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                            <img src={growsaleLogo} className="w-16 h-16 object-contain group-hover:scale-110 transition-transform duration-300" alt="Grow Sale logo" />
                           </div>
-                          <h3 className="font-semibold text-slate-700 mb-1">Connect Cloud Sync</h3>
+                          <h3 className="font-semibold text-slate-700 mb-1">Link Connect APP</h3>
                           <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">
                             Sign in with your Google account to link your store. Your sales, customers, and daily reports will sync automatically to the cloud.
                           </p>
                           <button
                             onClick={connectCloudSync}
                             disabled={syncConnecting}
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-medium text-sm hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg shadow-purple-200"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-brand-600 to-indigo-600 text-white rounded-xl font-medium text-sm hover:from-brand-700 hover:to-indigo-700 transition-all shadow-lg shadow-brand-200"
                           >
                             {syncConnecting ? (
                               <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Connecting...</>
@@ -1956,12 +1954,12 @@ export default function SettingsPage() {
                       ) : (
                         <div className="space-y-5">
                           {/* Connected Account */}
-                          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-100">
+                          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-brand-50/50 to-indigo-50/50 rounded-xl border border-brand-100/50">
                             <div className="flex items-center gap-3">
                               {syncStatus.account_picture ? (
                                 <img src={syncStatus.account_picture} alt="" className="w-10 h-10 rounded-full border-2 border-white shadow-sm" />
                               ) : (
-                                <div className="w-10 h-10 rounded-full bg-purple-200 flex items-center justify-center text-purple-700 font-bold text-sm">
+                                <div className="w-10 h-10 rounded-full bg-brand-200 flex items-center justify-center text-brand-700 font-bold text-sm">
                                   {syncStatus.account_name?.charAt(0) || syncStatus.owner_email?.charAt(0) || '?'}
                                 </div>
                               )}
@@ -2042,7 +2040,7 @@ export default function SettingsPage() {
                           <button
                             onClick={triggerManualSync}
                             disabled={syncSyncing}
-                            className="w-full py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg shadow-purple-200 disabled:opacity-60"
+                            className="w-full py-3.5 bg-gradient-to-r from-brand-600 to-indigo-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:from-brand-700 hover:to-indigo-700 transition-all shadow-lg shadow-brand-200 disabled:opacity-60"
                           >
                             {syncSyncing ? (
                               <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Syncing...</>
@@ -2055,25 +2053,25 @@ export default function SettingsPage() {
                     </div>
 
                     {/* How it Works */}
-                    <div className="card p-6 bg-purple-50/50 border-purple-100">
-                      <h3 className="font-semibold text-purple-800 text-sm mb-3 flex items-center gap-2">
-                        <Activity className="w-4 h-4" /> How Cloud Sync Works
+                    <div className="card p-6 bg-brand-50/30 border-brand-100/50">
+                      <h3 className="font-semibold text-brand-800 text-sm mb-3 flex items-center gap-2">
+                        <Activity className="w-4 h-4" /> How Connect APP Works
                       </h3>
-                      <div className="space-y-3 text-xs text-purple-700">
+                      <div className="space-y-3 text-xs text-brand-700">
                         <div className="flex items-start gap-2">
-                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</span>
+                          <span className="w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</span>
                           <span><strong>Auto Sale Sync</strong> — Every completed sale is automatically uploaded to the cloud with store_id tagging</span>
                         </div>
                         <div className="flex items-start gap-2">
-                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</span>
+                          <span className="w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</span>
                           <span><strong>Customer Tracking</strong> — Customer visit counts and data sync in real-time</span>
                         </div>
                         <div className="flex items-start gap-2">
-                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</span>
+                          <span className="w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</span>
                           <span><strong>Daily Reports</strong> — Summary with profit, top products, and customer count pushed at midnight</span>
                         </div>
                         <div className="flex items-start gap-2">
-                          <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">4</span>
+                          <span className="w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">4</span>
                           <span><strong>Offline Queue</strong> — If internet drops, data queues locally and auto-uploads when back online</span>
                         </div>
                       </div>
