@@ -18,7 +18,7 @@ import stripeLogo from '../assets/stripe.png';
 import growsaleLogo from '../assets/logo.png';
 
 type Tab = 'business' | 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license';
-type IntegrationView = 'list' | 'shopify' | 'google' | 'cloudsync';
+type IntegrationView = 'list' | 'shopify' | 'google' | 'cloudsync' | 'voice';
 
 interface CloudSyncStatus {
   connected: boolean;
@@ -120,6 +120,48 @@ export default function SettingsPage() {
   const [syncSyncing, setSyncSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
 
+  // Voice AI Agent state
+  const [voiceSettings, setVoiceSettings] = useState({ simple: settings.voice_simple_mode, full: settings.voice_full_mode });
+  const [voiceModelStatus, setVoiceModelStatus] = useState({ ready: settings.voice_model_ready, downloading: false, progress: 0, has_library: true, error: '', sidecar_online: false });
+  const [voiceCommands, setVoiceCommands] = useState<{ simple: Record<string, string>, full: Record<string, string> }>({ simple: {}, full: {} });
+  const [voiceTestText, setVoiceTestText] = useState('');
+  const [voiceTesting, setVoiceTesting] = useState(false);
+  const [voiceActiveTab, setVoiceActiveTab] = useState<'simple'|'full'>('simple');
+  const [newPhrase, setNewPhrase] = useState('');
+  const [newAction, setNewAction] = useState('');
+
+  // Always poll sidecar status every 2s so we can show real-time progress
+  // and detect when the sidecar comes online or model finishes downloading.
+  useEffect(() => {
+    const pollStatus = () => {
+      // Use manual AbortController for timeout — AbortSignal.timeout() not supported in older WebView2
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      fetch('http://127.0.0.1:8000/status', { signal: controller.signal })
+        .then(res => res.json())
+        .then(data => {
+          clearTimeout(timeoutId);
+          setVoiceModelStatus(prev => ({
+            ...prev,
+            ready: data.ready,
+            downloading: data.downloading,
+            progress: data.progress,
+            has_library: data.has_library,
+            error: data.error || '',
+            sidecar_online: true,
+          }));
+        })
+        .catch(() => {
+          clearTimeout(timeoutId);
+          // Sidecar not reachable — mark offline but don't spam errors
+          setVoiceModelStatus(prev => ({ ...prev, sidecar_online: false }));
+        });
+    };
+    pollStatus(); // Immediate first check
+    const interval = setInterval(pollStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
   const permissionModules = [
     { id: 'sales', label: 'Sales' },
     { id: 'inventory', label: 'Inventory' },
@@ -213,6 +255,16 @@ export default function SettingsPage() {
       loadSyncStatus(); // pre-load sync status for card badge
       if (integrationView === 'google') loadCloudData();
       if (integrationView === 'cloudsync') loadSyncStatus();
+      if (integrationView === 'voice') {
+         setVoiceSettings({ simple: settings.voice_simple_mode, full: settings.voice_full_mode });
+         try {
+           setVoiceCommands(JSON.parse(settings.voice_custom_commands || '{"simple":{},"full":{}}'));
+         } catch (e) {}
+         // Check sidecar status
+         fetch('http://127.0.0.1:8000/status').then(res => res.json()).then(data => {
+            setVoiceModelStatus(prev => ({ ...prev, ready: data.ready, downloading: data.downloading, progress: data.progress, has_library: data.has_library }));
+         }).catch(err => console.error("Whisper sidecar not running:", err));
+      }
     }
   }, [tab, integrationView, loadCloudData, loadSyncStatus]);
 
@@ -1322,6 +1374,28 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Voice AI Agent Card */}
+                  <div 
+                    onClick={() => setIntegrationView('voice')}
+                    className="group relative overflow-hidden bg-white rounded-3xl border border-slate-200 p-8 cursor-pointer transition-all hover:border-purple-300 hover:shadow-2xl hover:shadow-purple-100/50"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
+                    <div className="relative">
+                      <div className="w-16 h-16 mb-6 rounded-2xl bg-white shadow-lg flex items-center justify-center border border-slate-100">
+                        <svg className="w-8 h-8 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800 mb-2">Voice AI Agent</h3>
+                      <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                        Control your POS using offline Urdu voice commands. Completely free and secure.
+                      </p>
+                      <div className="flex items-center gap-2 text-purple-600 font-bold text-xs uppercase tracking-wider">
+                        Configure Settings <Plus className="w-3 h-3" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -2077,6 +2151,230 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
+                  </div>
+                </div>
+              )}
+
+              {/* Voice AI Agent Inner View */}
+              {integrationView === 'voice' && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                  <div className="space-y-6 max-w-2xl">
+                    <div className="card p-6">
+                      <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-5">
+                        <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h2 className="font-semibold text-slate-800">Voice AI Agent (Urdu)</h2>
+                          <p className="text-sm text-slate-500">Offline Whisper Model Integration</p>
+                        </div>
+                      </div>
+
+                      {/* Modes */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                          <div>
+                            <p className="text-sm font-bold text-slate-700">Sale With Voice (Simple Mode)</p>
+                            <p className="text-[11px] text-slate-500">Sirf sale screen voice se control hogi.</p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              checked={voiceSettings.simple || voiceSettings.full}
+                              disabled={voiceSettings.full}
+                              onChange={e => {
+                                const val = e.target.checked;
+                                setVoiceSettings(p => ({...p, simple: val}));
+                                cmd('set_setting', { key: 'voice_simple_mode', value: val ? '1' : '0' });
+                                settings.setSettings({ voice_simple_mode: val });
+                              }}
+                              className="sr-only peer" 
+                            />
+                            <div className={`w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${voiceSettings.full ? 'peer-checked:bg-purple-300 cursor-not-allowed' : 'peer-checked:bg-purple-500'}`}></div>
+                          </label>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-purple-50 rounded-xl border border-purple-100">
+                          <div>
+                            <p className="text-sm font-bold text-purple-900">Give Whole Access - Voice AI Agent</p>
+                            <p className="text-[11px] text-purple-700">Ye advanced feature hai - poora system voice commands se operate hoga.</p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              checked={voiceSettings.full}
+                              onChange={e => {
+                                const val = e.target.checked;
+                                setVoiceSettings(p => ({...p, full: val, simple: val ? true : p.simple}));
+                                cmd('set_many_settings', { map: { voice_full_mode: val ? '1' : '0', voice_simple_mode: val ? '1' : (voiceSettings.simple ? '1' : '0') } });
+                                settings.setSettings({ voice_full_mode: val, voice_simple_mode: val ? true : settings.voice_simple_mode });
+                              }}
+                              className="sr-only peer" 
+                            />
+                            <div className="w-11 h-6 bg-purple-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-purple-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Model Status */}
+                    <div className="card p-6">
+                      <h3 className="font-semibold text-slate-700 mb-4">Offline Whisper Model</h3>
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+                        {/* Sidecar connection indicator */}
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${voiceModelStatus.sidecar_online ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                          <span className="text-xs text-slate-500">
+                            {voiceModelStatus.sidecar_online ? 'Voice engine running' : 'Voice engine offline — start the app first'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 mr-4">
+                            <p className="text-sm font-bold text-slate-700">Whisper Model (tiny ~75MB)</p>
+                            <p className={`text-xs mt-0.5 ${
+                              voiceModelStatus.error ? 'text-red-500' :
+                              voiceModelStatus.downloading ? 'text-blue-500' :
+                              voiceModelStatus.ready ? 'text-green-600' : 'text-slate-500'
+                            }`}>
+                              {voiceModelStatus.error
+                                ? `❌ Error: ${voiceModelStatus.error}`
+                                : voiceModelStatus.downloading
+                                ? `⬇️ Downloading... ${voiceModelStatus.progress}%`
+                                : voiceModelStatus.ready
+                                ? '✅ Installed & Ready'
+                                : '⚠️ Not installed — click Download'}
+                            </p>
+                            {voiceModelStatus.downloading && (
+                              <div className="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
+                                <div
+                                  className="bg-purple-500 h-2 rounded-full transition-all duration-500 animate-pulse"
+                                  style={{ width: `${Math.max(voiceModelStatus.progress, 10)}%` }}
+                                ></div>
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={async () => {
+                              if (!voiceModelStatus.sidecar_online) {
+                                toast('Voice engine offline. Please launch the app properly.', 'error');
+                                return;
+                              }
+                              try {
+                                const res = await fetch('http://127.0.0.1:8000/download', { method: 'POST' });
+                                const data = await res.json();
+                                if (data.success) {
+                                  toast('Download started — please wait (~75MB)', 'success');
+                                  setVoiceModelStatus(p => ({ ...p, downloading: true, error: '' }));
+                                } else {
+                                  toast(data.error || 'Download failed', 'error');
+                                }
+                              } catch {
+                                toast('Could not reach voice engine. Is the app running?', 'error');
+                              }
+                            }}
+                            disabled={voiceModelStatus.downloading || voiceModelStatus.ready || !voiceModelStatus.sidecar_online}
+                            className="btn-secondary text-xs whitespace-nowrap"
+                          >
+                            {voiceModelStatus.ready ? '✅ Installed' : voiceModelStatus.downloading ? 'Downloading...' : '⬇️ Download Model'}
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 p-4 border border-slate-100 rounded-xl">
+                         <h4 className="text-sm font-bold text-slate-700 mb-2">Microphone Test</h4>
+                         <div className="flex gap-2">
+                            <button 
+                               onClick={async () => {
+                                  if (voiceTesting) return;
+                                  setVoiceTesting(true);
+                                  setVoiceTestText('Listening...');
+                                  try {
+                                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                                     const mr = new MediaRecorder(stream);
+                                     const chunks: Blob[] = [];
+                                     mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+                                     mr.onstop = async () => {
+                                        stream.getTracks().forEach(t => t.stop());
+                                        setVoiceTestText('Processing...');
+                                        const blob = new Blob(chunks, { type: 'audio/wav' });
+                                        const fd = new FormData(); fd.append('file', blob);
+                                        const res = await fetch('http://127.0.0.1:8000/transcribe', { method: 'POST', body: fd });
+                                        const data = await res.json();
+                                        setVoiceTestText(data.success ? data.text : (data.error || 'Failed'));
+                                        setVoiceTesting(false);
+                                     };
+                                     mr.start();
+                                     setTimeout(() => mr.stop(), 4000); // Record for 4 seconds
+                                  } catch (e: any) {
+                                     setVoiceTestText('Error: ' + e.message);
+                                     setVoiceTesting(false);
+                                  }
+                               }}
+                               className={`btn-primary whitespace-nowrap ${voiceTesting ? 'animate-pulse bg-red-500' : ''}`}
+                            >
+                               {voiceTesting ? 'Recording (4s)...' : 'Test Mic'}
+                            </button>
+                            <input type="text" readOnly value={voiceTestText} className="input flex-1 bg-slate-50" placeholder="Transcription result will appear here" />
+                         </div>
+                      </div>
+                    </div>
+
+                    {/* Custom Commands */}
+                    <div className="card p-6">
+                       <h3 className="font-semibold text-slate-700 mb-4">Custom Voice Commands</h3>
+                       <div className="flex gap-2 mb-4 border-b border-slate-100 pb-2">
+                          <button onClick={() => setVoiceActiveTab('simple')} className={`px-4 py-1 text-sm font-bold ${voiceActiveTab==='simple' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-slate-400'}`}>Simple Mode</button>
+                          <button onClick={() => setVoiceActiveTab('full')} className={`px-4 py-1 text-sm font-bold ${voiceActiveTab==='full' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-slate-400'}`}>Full AI Mode</button>
+                       </div>
+                       
+                       <div className="grid grid-cols-3 gap-2 mb-4">
+                          <input type="text" value={newPhrase} onChange={e=>setNewPhrase(e.target.value)} placeholder="Urdu Phrase (e.g. naya sale)" className="input col-span-1 text-sm" />
+                          <input type="text" value={newAction} onChange={e=>setNewAction(e.target.value)} placeholder="Route (e.g. /sales) or Action" className="input col-span-1 text-sm" />
+                          <button 
+                             onClick={() => {
+                                if(!newPhrase || !newAction) return;
+                                const updated = {...voiceCommands};
+                                updated[voiceActiveTab][newPhrase] = newAction;
+                                setVoiceCommands(updated);
+                                cmd('set_setting', { key: 'voice_custom_commands', value: JSON.stringify(updated) });
+                                settings.setSettings({ voice_custom_commands: JSON.stringify(updated) });
+                                setNewPhrase(''); setNewAction('');
+                             }}
+                             className="btn-secondary text-sm whitespace-nowrap"
+                          >
+                             Add Command
+                          </button>
+                       </div>
+                       
+                       <div className="bg-slate-50 rounded-xl border border-slate-100 p-2 min-h-[100px]">
+                          {Object.entries(voiceCommands[voiceActiveTab] || {}).map(([phrase, action]) => (
+                             <div key={phrase} className="flex justify-between items-center p-2 border-b border-slate-100 last:border-0">
+                                <span className="font-bold text-slate-700 text-sm">"{phrase}"</span>
+                                <div className="flex items-center gap-4">
+                                   <span className="font-mono text-xs text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">{action}</span>
+                                   <button 
+                                     onClick={() => {
+                                        const updated = {...voiceCommands};
+                                        delete updated[voiceActiveTab][phrase];
+                                        setVoiceCommands(updated);
+                                        cmd('set_setting', { key: 'voice_custom_commands', value: JSON.stringify(updated) });
+                                        settings.setSettings({ voice_custom_commands: JSON.stringify(updated) });
+                                     }}
+                                     className="text-red-500 hover:text-red-700"
+                                   >
+                                      <Trash2 className="w-4 h-4" />
+                                   </button>
+                                </div>
+                             </div>
+                          ))}
+                          {Object.keys(voiceCommands[voiceActiveTab] || {}).length === 0 && (
+                             <p className="text-xs text-slate-400 text-center mt-6">No custom commands added.</p>
+                          )}
+                       </div>
+                    </div>
                   </div>
                 </div>
               )}

@@ -24,6 +24,10 @@ interface Settings {
   logo_height: number;
   logo_align: 'left' | 'center' | 'right';
   receipt_font: string;
+  voice_simple_mode: boolean;
+  voice_full_mode: boolean;
+  voice_model_ready: boolean;
+  voice_custom_commands: string; // JSON string of custom commands
 }
 
 interface SettingsState extends Settings {
@@ -57,6 +61,10 @@ export const useSettingsStore = create<SettingsState>()(
       logo_height: 120,
       logo_align: 'center' as const,
       receipt_font: "'Courier New', Courier, monospace",
+      voice_simple_mode: false,
+      voice_full_mode: false,
+      voice_model_ready: false,
+      voice_custom_commands: '{"simple":{},"full":{}}',
 
       setSettings: (s) => set((state) => ({ ...state, ...s })),
       setLanguage: (language) => set({ language }),

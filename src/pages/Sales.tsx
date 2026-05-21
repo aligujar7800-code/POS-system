@@ -7,6 +7,7 @@ import { backgroundCreateOrder, isShopifyConfigured } from '../lib/shopify';
 import { useCartStore } from '../stores/cartStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
+import { useVoiceCommandParser } from '../hooks/useVoiceCommandParser';
 import { SaleDetailsModal } from './Receipts';
 import { useBarcode, useGlobalBarcode } from '../hooks/useBarcode';
 import { useToast } from '../components/ui/Toaster';
@@ -199,6 +200,7 @@ export default function SalesPage() {
   } = useSettingsStore();
   const cart = useCartStore();
   const queryClient = useQueryClient();
+  const { parseCommand } = useVoiceCommandParser();
 
   const [productSearch, setProductSearch] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
@@ -296,6 +298,17 @@ export default function SalesPage() {
   // Ref to avoid stale closures in keyboard handler
   const completeSaleRef = useRef<() => void>(() => {});
   useEffect(() => { completeSaleRef.current = handleCompleteSale; });
+
+  // Voice Command Variant Listener
+  useEffect(() => {
+    const handleVariant = (e: any) => {
+      if (e.detail?.product) {
+        setShowVariants(e.detail.product);
+      }
+    };
+    window.addEventListener('VOICE_COMMAND_REQUIRE_VARIANT', handleVariant);
+    return () => window.removeEventListener('VOICE_COMMAND_REQUIRE_VARIANT', handleVariant);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -578,7 +591,31 @@ export default function SalesPage() {
           </div>
         )}
 
-        <div className="px-3 pb-3 mt-2" />
+        <div className="px-3 pb-3 mt-2">
+          {/* Smart Input Bar */}
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const input = e.currentTarget.elements.namedItem('smartInput') as HTMLInputElement;
+              if (input.value.trim()) {
+                parseCommand(input.value, true);
+                input.value = '';
+              }
+            }}
+          >
+            <input 
+              name="smartInput"
+              type="text" 
+              placeholder="Type items here (e.g. 2 chips and 1 amoxicillin) and press Enter..." 
+              className="flex-1 input text-sm bg-white border-brand-200 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-xl px-4 py-2"
+              autoComplete="off"
+            />
+            <button type="submit" className="btn-primary rounded-xl px-4 py-2 text-sm font-medium whitespace-nowrap">
+              Add Items
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* ── RIGHT: Customer + Payment ─────────────────────────────────── */}

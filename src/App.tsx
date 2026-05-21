@@ -88,6 +88,10 @@ export default function App() {
             printer_port: dbSettings.printer_port,
             printer_baud: parseInt(dbSettings.printer_baud) || 9600,
             language: dbSettings.language || 'en',
+            voice_simple_mode: dbSettings.voice_simple_mode === 'true',
+            voice_full_mode: dbSettings.voice_full_mode === 'true',
+            voice_model_ready: dbSettings.voice_model_ready === 'true',
+            voice_custom_commands: dbSettings.voice_custom_commands || '{"simple":{},"full":{}}',
           });
           if (dbSettings.business_type) {
             setBusinessType(dbSettings.business_type);

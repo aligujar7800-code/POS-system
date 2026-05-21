@@ -4,6 +4,7 @@ import Sidebar from './Sidebar';
 import { check } from '@tauri-apps/plugin-updater';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import { relaunch } from '@tauri-apps/plugin-process';
+import FloatingMicrophone from '../FloatingMicrophone';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 flex flex-col overflow-hidden">
         {children}
       </main>
+      <FloatingMicrophone />
     </div>
   );
 }

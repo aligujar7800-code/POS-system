@@ -51,6 +51,23 @@ pub fn run() {
                 }
             });
 
+            // Spawn the Whisper sidecar
+            use tauri_plugin_shell::ShellExt;
+            if let Ok(sidecar) = app.handle().shell().sidecar("whisper_sidecar") {
+                tauri::async_runtime::spawn(async move {
+                    match sidecar.spawn() {
+                        Ok((mut rx, _)) => {
+                            while let Some(event) = rx.recv().await {
+                                // Keep sidecar alive, can log events if needed
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to spawn Whisper sidecar: {}", e),
+                    }
+                });
+            } else {
+                eprintln!("Whisper sidecar not found in config");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

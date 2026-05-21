@@ -34,3 +34,19 @@ src-tauri/updater_key
 .env.*
 src-tauri/.env
 src-tauri/.env.*
+
+# Python Virtual Environments
+.venv_sidecar/
+scripts/.venv_sidecar/
+
+# Build artifacts and PyInstaller files
+scripts/build/
+scripts/dist/
+dist/
+build/
+*.spec
+scripts/*.spec
+
+# Executables
+src-tauri/bin/*.exe
+
