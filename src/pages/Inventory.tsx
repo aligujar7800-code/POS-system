@@ -8,7 +8,8 @@ import { useToast } from '../components/ui/Toaster';
 import AdminConfirmModal from '../components/ui/AdminConfirmModal';
 import BarcodeModal from '../components/ui/BarcodeModal';
 import BatchBarcodeModal from '../components/ui/BatchBarcodeModal';
-import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw, ShoppingBag } from 'lucide-react';
+import SmartProductImportModal from '../components/SmartProductImportModal';
+import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw, ShoppingBag, Scan } from 'lucide-react';
 import { syncProductToShopify } from '../lib/shopify';
 import { useBusinessStore } from '../stores/businessStore';
 import { ModuleInventoryValue } from '../components/modules/ModuleFields';
@@ -35,7 +36,7 @@ type StockFilter = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
 
 export default function InventoryPage() {
   const { t } = useTranslation();
-  const { currency_symbol } = useSettingsStore();
+  const { currency_symbol, smart_product_import } = useSettingsStore();
   const fmt = (n: number) => formatCurrency(n, currency_symbol);
 
   // Module system
@@ -66,6 +67,9 @@ export default function InventoryPage() {
   // Batch Printing State
   const [activeBatchProduct, setActiveBatchProduct] = useState<Product | null>(null);
   const [syncingProductId, setSyncingProductId] = useState<number | null>(null);
+  
+  // Smart Import State
+  const [showSmartImport, setShowSmartImport] = useState(false);
 
   const { data: variants = [], isLoading: isLoadingVariants, isError, error } = useQuery<ProductVariant[]>({
     queryKey: ['variants', expandedProductId],
@@ -148,6 +152,14 @@ export default function InventoryPage() {
           >
             <RefreshCcw className="w-4 h-4" /> Fix Barcodes
           </button>
+          {smart_product_import && (
+            <button 
+              onClick={() => setShowSmartImport(true)}
+              className="btn-secondary text-brand-600 bg-brand-50 border-brand-200 hover:bg-brand-100"
+            >
+              <Scan className="w-4 h-4" /> Camera Se Product Add Karo
+            </button>
+          )}
           <Link to="/inventory/categories" className="btn-secondary">
             <Layers className="w-4 h-4" /> Categories
           </Link>
@@ -449,6 +461,13 @@ export default function InventoryPage() {
           onClose={() => setActiveBatchProduct(null)}
           product={activeBatchProduct}
           variants={variants}
+        />
+      )}
+
+      {showSmartImport && (
+        <SmartProductImportModal 
+          isOpen={showSmartImport} 
+          onClose={() => setShowSmartImport(false)} 
         />
       )}
     </div>

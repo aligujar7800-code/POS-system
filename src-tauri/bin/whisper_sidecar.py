@@ -167,8 +167,12 @@ async def transcribe(file: UploadFile = File(...)):
 
     tmp_path = None
     try:
-        # Save uploaded audio to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        # Determine the correct file extension from the uploaded filename
+        original_name = file.filename or "audio.webm"
+        ext = os.path.splitext(original_name)[1] or ".webm"
+        
+        # Save uploaded audio to a temporary file with the correct extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
@@ -179,8 +183,29 @@ async def transcribe(file: UploadFile = File(...)):
             language="ur",
             beam_size=5
         )
-        text = " ".join([seg.text for seg in segments]).strip()
-        return {"success": True, "text": text, "language": info.language}
+        
+        text_parts = []
+        total_logprob = 0
+        total_no_speech = 0
+        count = 0
+        
+        for seg in segments:
+            text_parts.append(seg.text)
+            total_logprob += getattr(seg, 'avg_logprob', 0)
+            total_no_speech += getattr(seg, 'no_speech_prob', 0)
+            count += 1
+            
+        text = " ".join(text_parts).strip()
+        avg_logprob = total_logprob / count if count > 0 else 0
+        avg_no_speech = total_no_speech / count if count > 0 else 0
+        
+        return {
+            "success": True, 
+            "text": text, 
+            "language": info.language,
+            "avg_logprob": avg_logprob,
+            "no_speech_prob": avg_no_speech
+        }
 
     except Exception as e:
         import traceback

@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toaster';
-import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X, Briefcase } from 'lucide-react';
+import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X, Briefcase, Scan } from 'lucide-react';
 import ImportWizard from '../components/ImportWizard';
 import BusinessTypeSelector from '../components/modules/BusinessTypeSelector';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -17,7 +17,7 @@ import hblLogo from '../assets/hbl.png';
 import stripeLogo from '../assets/stripe.png';
 import growsaleLogo from '../assets/logo.png';
 
-type Tab = 'business' | 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license';
+type Tab = 'business' | 'shop' | 'receipt' | 'tax' | 'users' | 'hardware' | 'integrations' | 'payments' | 'import' | 'language' | 'license' | 'smart';
 type IntegrationView = 'list' | 'shopify' | 'google' | 'cloudsync' | 'voice';
 
 interface CloudSyncStatus {
@@ -638,6 +638,7 @@ export default function SettingsPage() {
 
   const tabs: [Tab, string, React.ReactNode][] = [
     ['business', 'Business Type', <Briefcase className="w-4 h-4" />],
+    ['smart', 'Smart Features', <Scan className="w-4 h-4" />],
     ['shop', t('settings.shopInfo'), <Store className="w-4 h-4" />],
     ['receipt', t('settings.receipt'), <Settings className="w-4 h-4" />],
     ['tax', t('settings.taxSettings'), <Settings className="w-4 h-4" />],
@@ -696,6 +697,97 @@ export default function SettingsPage() {
           {tab === 'business' && (
             <div className="card p-6 max-w-4xl">
               <BusinessTypeSelector />
+            </div>
+          )}
+
+          {/* Smart Features */}
+          {tab === 'smart' && (
+            <div className="space-y-6 max-w-4xl">
+              <div className="card p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
+                    <Scan className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800">Smart Features & Camera</h2>
+                    <p className="text-sm text-slate-500">Enable advanced camera-based barcode scanning for inventory and sales.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Smart Product Import */}
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="font-semibold text-slate-700">Smart Product Import</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Enable camera barcode scanner in Inventory. Scanned products will be auto-filled using UPCitemDB and Open Food Facts APIs.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer ml-4">
+                      <input
+                        type="checkbox"
+                        checked={settings.smart_product_import}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          cmd('set_setting', { key: 'smart_product_import', value: val ? '1' : '0' });
+                          settings.setSettings({ smart_product_import: val });
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Camera Sale Mode */}
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="font-semibold text-slate-700">Camera Sale Mode</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Enable a floating, always-on camera scanner in the Sales screen for quick barcode checkout.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer ml-4">
+                      <input
+                        type="checkbox"
+                        checked={settings.camera_sale_mode}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          cmd('set_setting', { key: 'camera_sale_mode', value: val ? '1' : '0' });
+                          settings.setSettings({ camera_sale_mode: val });
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Minimum Scan Interval */}
+                  {settings.camera_sale_mode && (
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 animate-in fade-in slide-in-from-top-2">
+                      <label className="label text-slate-700">Minimum Scan Interval (ms)</label>
+                      <p className="text-xs text-slate-500 mb-2">Time to wait before a barcode can be scanned again (prevents accidental double scans).</p>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="500"
+                          max="5000"
+                          step="500"
+                          value={settings.camera_scan_interval}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            cmd('set_setting', { key: 'camera_scan_interval', value: val.toString() });
+                            settings.setSettings({ camera_scan_interval: val });
+                          }}
+                          className="flex-1 accent-purple-600"
+                        />
+                        <span className="text-sm font-bold text-slate-700 w-16 text-right">
+                          {settings.camera_scan_interval / 1000} sec
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

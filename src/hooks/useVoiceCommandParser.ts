@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useCartStore } from '../stores/cartStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
+import { useBusinessStore } from '../stores/businessStore';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../components/ui/Toaster';
 
@@ -40,12 +41,24 @@ function urduToRoman(text: string): string {
 
 function consonantSkeleton(text: string): string {
   return text.toLowerCase()
-    .replace(/[aeiouy\s\-_.,]/g, '')
-    .replace(/j/g, 'ch')
-    .replace(/b/g, 'p')
-    .replace(/d/g, 't')
-    .replace(/z/g, 's')
-    .replace(/g/g, 'k');
+    .replace(/[aeiouy\s\-_.,]/g, '') // remove vowels and punctuation
+    .replace(/h/g, '')               // remove aspiration/h
+    .replace(/[cjqg]/g, 'k')         // group palatal/velar
+    .replace(/[b]/g, 'p')            // group labial stops
+    .replace(/[d]/g, 't')            // group dental/alveolar stops
+    .replace(/[z]/g, 's')            // group alveolar fricatives
+    .replace(/[vwm]/g, 'f');         // group labial fricatives/nasals (optional, but fvw is good, maybe leave m alone)
+}
+// Let's refine the phonetic mapping:
+function refinedConsonantSkeleton(text: string): string {
+  return text.toLowerCase()
+    .replace(/[aeiouy\s\-_.,]/g, '') 
+    .replace(/h/g, '')               
+    .replace(/[cjqg]/g, 'k')         
+    .replace(/b/g, 'p')            
+    .replace(/d/g, 't')            
+    .replace(/z/g, 's')            
+    .replace(/[vw]/g, 'f');         
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -81,21 +94,101 @@ const URDU_NUMBERS: Record<string, number> = {
   'das': 10, 'dus': 10, 'دس': 10, '١٠': 10, '10': 10,
 };
 
-// ─── Core Commands ───────────────────────────────────────────────────
-const CHECKOUT_WORDS = new Set([
+const CORE_CHECKOUT_WORDS = [
   'total', 'bill', 'checkout', 'payment', 'pay',
   'ٹوٹل', 'بل', 'چیک', 'پیمنٹ', 'ادائیگی',
-]);
+];
 
-const DISCOUNT_WORDS = new Set([
+const CORE_DISCOUNT_WORDS = [
   'discount', 'riayat', 'riyayat',
   'ڈسکاؤنٹ', 'ڈسکاونٹ', 'رعایت', 'ریعایت',
-]);
+];
 
-const DELETE_WORDS = new Set([
+const CORE_DELETE_WORDS = [
   'delete', 'hatao', 'remove', 'nikal', 'nikalo', 'cancel',
   'ہٹاؤ', 'ڈیلیٹ', 'ریموو', 'نکال', 'نکالو', 'ہٹا', 'کینسل',
-]);
+];
+
+// Business specific additional commands
+// NOTE: Single words go into the Set for word-level matching.
+// Multi-word phrases are matched against the full normalized text separately.
+interface BusinessCommandExtras {
+  checkoutWords?: string[];
+  checkoutPhrases?: string[];
+  discountWords?: string[];
+  discountPhrases?: string[];
+  deleteWords?: string[];
+  deletePhrases?: string[];
+}
+
+const BUSINESS_EXTRAS: Record<string, BusinessCommandExtras> = {
+  clothing: {},
+  restaurant: {
+    checkoutWords: ['check', 'parsal', 'کھانا', 'پارسل'],
+    checkoutPhrases: ['table bill', 'dine in', 'takeaway'],
+    discountWords: ['complimentary'],
+  },
+  pharmacy: {
+    checkoutWords: ['nuskha', 'parchi', 'نسخہ', 'پرچی'],
+    checkoutPhrases: ['prescription bill'],
+  },
+  grocery: {
+    checkoutWords: ['khata', 'hisab', 'کھاتہ', 'حساب'],
+  },
+  hardware: {
+    checkoutWords: ['estimation', 'quote', 'andaza', 'اندازہ'],
+  },
+  salon: {
+    checkoutWords: ['سروس'],
+    checkoutPhrases: ['service charge', 'appointment bill'],
+  },
+  electronics: {
+    checkoutWords: ['وارنٹی'],
+    checkoutPhrases: ['warranty card bill'],
+  },
+  bakery: {
+    checkoutPhrases: ['cake bill', 'party order', 'کیک کا بل'],
+  },
+  dairy: {
+    checkoutWords: ['khata', 'دودھ'],
+    checkoutPhrases: ['doodh ka bill'],
+  },
+  mobile: {
+    checkoutWords: ['easyload', 'recharge', 'ایزی', 'ریپیر'],
+    checkoutPhrases: ['repair bill'],
+  },
+  shoes: {
+    checkoutWords: ['جوتے'],
+    checkoutPhrases: ['jootay ka bill'],
+  },
+  stationery: {
+    checkoutPhrases: ['copy pencil ka bill', 'school list', 'کتابوں کا بل'],
+  },
+  autoparts: {
+    checkoutWords: ['مکینک'],
+    checkoutPhrases: ['mechanic hisab', 'gari ka bill'],
+  },
+  fruitveg: {
+    checkoutWords: ['dharri', 'پیٹی', 'دھڑی'],
+    checkoutPhrases: ['petti hisab'],
+  },
+  wholesale: {
+    checkoutWords: ['ٹرک', 'بلٹی'],
+    checkoutPhrases: ['truck hisab', 'bilty payment', 'gudam bill'],
+  },
+};
+
+function getBusinessCommands(businessType: string) {
+  const extra = BUSINESS_EXTRAS[businessType] || BUSINESS_EXTRAS['clothing'];
+  return {
+    checkoutWords: new Set([...CORE_CHECKOUT_WORDS, ...(extra.checkoutWords || [])]),
+    checkoutPhrases: extra.checkoutPhrases || [],
+    discountWords: new Set([...CORE_DISCOUNT_WORDS, ...(extra.discountWords || [])]),
+    discountPhrases: extra.discountPhrases || [],
+    deleteWords: new Set([...CORE_DELETE_WORDS, ...(extra.deleteWords || [])]),
+    deletePhrases: extra.deletePhrases || [],
+  };
+}
 
 const NAV_MAP: { words: Set<string>; route: string; label: string }[] = [
   { words: new Set(['settings', 'setting', 'سیٹنگ', 'سیٹنگز']), route: '/settings', label: 'Settings' },
@@ -109,6 +202,16 @@ const LOGOUT_WORDS = new Set(['logout', 'signout', 'لاگ', 'سائن', 'بند
 
 function hasAnyWord(words: string[], wordSet: Set<string>): boolean {
   return words.some(w => wordSet.has(w));
+}
+
+/** Check if any multi-word phrase appears in the full normalized text */
+function hasAnyPhrase(normalizedText: string, phrases: string[]): boolean {
+  return phrases.some(phrase => normalizedText.includes(normalize(phrase)));
+}
+
+/** Combined check: single-word OR multi-word phrase match */
+function matchesCommand(words: string[], normalizedText: string, wordSet: Set<string>, phrases: string[]): boolean {
+  return hasAnyWord(words, wordSet) || hasAnyPhrase(normalizedText, phrases);
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────
@@ -153,7 +256,7 @@ async function detectProductsInSentence(sentence: string): Promise<Array<{ produ
     const allProducts = await invoke<SearchProduct[]>('get_all_products');
     if (!allProducts || allProducts.length === 0) return [];
 
-    const splitTokens = [' aur ', ' and ', ' wa ', ' ya ', ',', '،'];
+    const splitTokens = [' aur ', ' and ', ' wa ', ' ya ', ',', '،', ' aor '];
     let chunks = [romanized];
     splitTokens.forEach(token => {
         const newChunks: string[] = [];
@@ -164,7 +267,7 @@ async function detectProductsInSentence(sentence: string): Promise<Array<{ produ
     });
     chunks = chunks.map(c => c.trim()).filter(c => c.length > 0);
 
-    const extractSkelOrNum = (w: string) => (/^\d+$/.test(w) || URDU_NUMBERS[w]) ? w : consonantSkeleton(w);
+    const extractSkelOrNum = (w: string) => (/^\d+$/.test(w) || URDU_NUMBERS[w]) ? w : refinedConsonantSkeleton(w);
 
     for (const chunk of chunks) {
         const words = chunk.split(' ');
@@ -186,6 +289,8 @@ async function detectProductsInSentence(sentence: string): Promise<Array<{ produ
         
         let chunkSkeletons = remainingWords.map(extractSkelOrNum).filter(s => s.length > 0);
         if (chunkSkeletons.length === 0) continue;
+        
+        const chunkFullString = chunkSkeletons.join('');
 
         let bestMatch: SearchProduct | null = null;
         let bestScore = 0;
@@ -193,6 +298,7 @@ async function detectProductsInSentence(sentence: string): Promise<Array<{ produ
         for (const product of allProducts) {
             const productWords = product.name.toLowerCase().split(/\s+/);
             const productSkeletons = productWords.map(extractSkelOrNum).filter(s => s.length > 0);
+            const productFullString = productSkeletons.join('');
             
             let matchedProductWords = 0;
             
@@ -217,18 +323,32 @@ async function detectProductsInSentence(sentence: string): Promise<Array<{ produ
             }
 
             const significantProductWords = productSkeletons.filter(s => s.length >= 2 || URDU_NUMBERS[s]).length;
+            let score = 0;
+            
             if (significantProductWords > 0) {
-                const score = matchedProductWords / significantProductWords;
+                score = matchedProductWords / significantProductWords;
+            }
+            
+            // CONCATENATED MATCH CHECK (Fix for Whisper merging words like "bandageroll")
+            if (productFullString.length > 3 && chunkFullString.length > 3) {
+                 const fullDistance = levenshteinDistance(productFullString, chunkFullString);
+                 const maxLen = Math.max(productFullString.length, chunkFullString.length);
+                 const fullSimilarity = 1 - (fullDistance / maxLen);
+                 if (fullSimilarity > score) {
+                     score = fullSimilarity; // Override word-by-word score if the full string matches better
+                 }
+            }
+            
+            if (score > 0) {
                 const adjustedScore = score + (significantProductWords * 0.01);
-
-                if (adjustedScore > bestScore && score >= 0.5) {
+                if (adjustedScore > bestScore && score >= 0.6) {
                     bestScore = adjustedScore;
                     bestMatch = product;
                 }
             }
         }
 
-        if (bestMatch && bestScore >= 0.5) {
+        if (bestMatch && bestScore >= 0.6) {
             matchedProducts.push({ product: bestMatch, score: bestScore, qty });
         }
     }
@@ -251,11 +371,14 @@ export function useVoiceCommandParser() {
   const cartRemoveItem = useCartStore(state => state.removeItem);
   const cartItems = useCartStore(state => state.items);
   const { voice_simple_mode, voice_full_mode, voice_custom_commands } = useSettingsStore();
+  const businessType = useBusinessStore(state => state.businessType);
   const logout = useAuthStore(state => state.logout);
 
   const parseCommand = useCallback(async (transcribedText: string, forceExecute: boolean = false) => {
     if (!transcribedText) return;
 
+    const cmds = getBusinessCommands(businessType);
+    
     const words = getWords(transcribedText);
     const normalizedFull = normalize(transcribedText);
     let handled = false;
@@ -272,12 +395,12 @@ export function useVoiceCommandParser() {
       if (forceExecute || voice_full_mode || location.pathname.includes('/sales')) {
         
         // 1. Exact Intent Checks
-        if (hasAnyWord(words, CHECKOUT_WORDS)) {
+        if (matchesCommand(words, normalizedFull, cmds.checkoutWords, cmds.checkoutPhrases)) {
           window.dispatchEvent(new CustomEvent('VOICE_COMMAND_CHECKOUT'));
           toast('Voice: Checkout ✅', 'success');
           handled = true;
         }
-        else if (hasAnyWord(words, DISCOUNT_WORDS)) {
+        else if (matchesCommand(words, normalizedFull, cmds.discountWords, cmds.discountPhrases)) {
           window.dispatchEvent(new CustomEvent('VOICE_COMMAND_DISCOUNT'));
           toast('Voice: Discount ✅', 'success');
           handled = true;
@@ -286,7 +409,7 @@ export function useVoiceCommandParser() {
         // 2. PRODUCT-FIRST HEURISTIC MATCHING
         // If it's not checkout or discount, scan the sentence for a product.
         if (!handled) {
-          const isDelete = hasAnyWord(words, DELETE_WORDS);
+          const isDelete = matchesCommand(words, normalizedFull, cmds.deleteWords, cmds.deletePhrases);
           
           // Don't search if the sentence is completely empty after removing commands
           const searchSentence = transcribedText;
@@ -439,7 +562,7 @@ export function useVoiceCommandParser() {
        toast(`Samajh nahi aaya — "${transcribedText}"`, 'error');
     }
 
-  }, [navigate, location.pathname, addItem, cartItems, cartRemoveItem, voice_simple_mode, voice_full_mode, voice_custom_commands, logout, toast]);
+  }, [navigate, location.pathname, addItem, cartItems, cartRemoveItem, voice_simple_mode, voice_full_mode, voice_custom_commands, logout, toast, businessType]);
 
   return { parseCommand };
 }

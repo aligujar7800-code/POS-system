@@ -28,6 +28,9 @@ interface Settings {
   voice_full_mode: boolean;
   voice_model_ready: boolean;
   voice_custom_commands: string; // JSON string of custom commands
+  smart_product_import: boolean;
+  camera_sale_mode: boolean;
+  camera_scan_interval: number;
 }
 
 interface SettingsState extends Settings {
@@ -65,6 +68,9 @@ export const useSettingsStore = create<SettingsState>()(
       voice_full_mode: false,
       voice_model_ready: false,
       voice_custom_commands: '{"simple":{},"full":{}}',
+      smart_product_import: false,
+      camera_sale_mode: false,
+      camera_scan_interval: 2000,
 
       setSettings: (s) => set((state) => ({ ...state, ...s })),
       setLanguage: (language) => set({ language }),

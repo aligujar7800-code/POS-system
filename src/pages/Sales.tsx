@@ -13,6 +13,9 @@ import { useBarcode, useGlobalBarcode } from '../hooks/useBarcode';
 import { useToast } from '../components/ui/Toaster';
 import PaymentFlowModal from '../components/ui/PaymentFlowModal';
 import { useBusinessStore } from '../stores/businessStore';
+import DraggableCamera from '../components/DraggableCamera';
+import SmartProductImportModal from '../components/SmartProductImportModal';
+import { playSuccessSound, playErrorSound } from '../lib/audio';
 import ModuleFields from '../components/modules/ModuleFields';
 import jazzcashLogo from '../assets/jazzcash.png';
 import easypaisaLogo from '../assets/easypaisa.png';
@@ -196,7 +199,8 @@ export default function SalesPage() {
     currency_symbol, tax_rate, printer_type, printer_port, printer_baud,
     shop_name, shop_address, shop_phone, shop_logo, shop_email,
     receipt_header, receipt_footer,
-    logo_width, logo_height, logo_align, receipt_font
+    logo_width, logo_height, logo_align, receipt_font,
+    camera_sale_mode, camera_scan_interval
   } = useSettingsStore();
   const cart = useCartStore();
   const queryClient = useQueryClient();
@@ -217,6 +221,16 @@ export default function SalesPage() {
   const [showPaymentFlow, setShowPaymentFlow] = useState<'jazzcash' | 'easypaisa' | 'hbl_pay' | 'stripe' | null>(null);
   const [pendingGatewayTxnId, setPendingGatewayTxnId] = useState<number | null>(null);
   const [globalSaleMeta, setGlobalSaleMeta] = useState<Record<string, any>>({});
+  
+  // Camera Sale Mode State
+  const lastScanTimeRef = useRef(0);
+  const [showCamera, setShowCamera] = useState(true); // local visibility — closing X doesn't change global setting
+  const [missingProductBarcode, setMissingProductBarcode] = useState<string | null>(null);
+
+  // Re-show camera when user re-enables the setting (e.g. from Settings page)
+  useEffect(() => {
+    if (camera_sale_mode) setShowCamera(true);
+  }, [camera_sale_mode]);
 
   const activeModule = useBusinessStore(s => s.getActiveModule)();
   const globalSaleFields = activeModule.saleFields.filter(f => !f.showInCart);
@@ -250,9 +264,16 @@ export default function SalesPage() {
 
   // Barcode handler
   const handleBarcode = useCallback(async (barcode: string) => {
+    const now = Date.now();
+    if (now - lastScanTimeRef.current < (camera_scan_interval || 2000)) {
+      return; // Debounce
+    }
+    lastScanTimeRef.current = now;
+
     try {
       const product = await cmd<Product | null>('get_product_by_barcode', { barcode });
       if (product) {
+        playSuccessSound();
         // Resolve variant for barcode scanned item
         const variants = await cmd<ProductVariant[]>('get_product_variants', { productId: product.id });
         
@@ -286,12 +307,13 @@ export default function SalesPage() {
         });
         toast(`Added: ${nameStr}`, 'success');
       } else {
-        toast(`Barcode not found: ${barcode}`, 'error');
+        playErrorSound();
+        setMissingProductBarcode(barcode);
       }
     } catch (e) {
       toast('Barcode lookup failed', 'error');
     }
-  }, [cart, toast]);
+  }, [cart, toast, camera_scan_interval]);
 
   useBarcode(handleBarcode);
 
@@ -1037,6 +1059,35 @@ export default function SalesPage() {
             setShowPaymentFlow(null);
             toast('Payment queued. Complete sale with cash for now.', 'info');
             setPaymentMethod('cash');
+          }}
+        />
+      )}
+
+      {/* Camera & Smart Features */}
+      {camera_sale_mode && showCamera && (
+        <DraggableCamera 
+          onScan={handleBarcode}
+          onClose={() => setShowCamera(false)} 
+          paused={!!missingProductBarcode || completing || !!showPaymentFlow || !!showVariants || !!autoPrintSaleId} 
+        />
+      )}
+
+      {missingProductBarcode && (
+        <SmartProductImportModal
+          isOpen={true}
+          initialBarcode={missingProductBarcode}
+          onClose={() => setMissingProductBarcode(null)}
+          onProductSaved={(product) => {
+            cart.addItem({
+              product_id: product.id,
+              product_name: product.name,
+              barcode: product.barcode,
+              quantity: 1,
+              unit_price: product.sale_price,
+              discount: 0,
+              discount_type: 'amount',
+            });
+            toast(`Added: ${product.name}`, 'success');
           }}
         />
       )}
