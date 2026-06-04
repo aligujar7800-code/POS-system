@@ -121,6 +121,11 @@ export default function App() {
             console.log('Downloading and installing update...');
             await update.downloadAndInstall();
             console.log('Update installed successfully!');
+            try {
+              await cmd('kill_sidecar');
+            } catch (err) {
+              console.error('Failed to kill sidecar:', err);
+            }
             await relaunch();
           }
         } else {

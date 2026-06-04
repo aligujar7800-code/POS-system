@@ -11,6 +11,17 @@ use commands::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tauri::Manager;
+use tauri_plugin_shell::process::CommandChild;
+
+struct SidecarState(Arc<Mutex<Option<CommandChild>>>);
+
+#[tauri::command]
+fn kill_sidecar(state: tauri::State<'_, SidecarState>) {
+    if let Some(child) = state.0.lock().take() {
+        println!("Killing Whisper sidecar...");
+        let _ = child.kill();
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -53,17 +64,21 @@ pub fn run() {
 
             // Spawn the Whisper sidecar
             use tauri_plugin_shell::ShellExt;
+            let sidecar_child = Arc::new(Mutex::new(None));
+            app.manage(SidecarState(sidecar_child.clone()));
+
             if let Ok(sidecar) = app.handle().shell().sidecar("whisper_sidecar") {
-                tauri::async_runtime::spawn(async move {
-                    match sidecar.spawn() {
-                        Ok((mut rx, _)) => {
-                            while let Some(event) = rx.recv().await {
+                match sidecar.spawn() {
+                    Ok((mut rx, child)) => {
+                        *sidecar_child.lock() = Some(child);
+                        tauri::async_runtime::spawn(async move {
+                            while let Some(_event) = rx.recv().await {
                                 // Keep sidecar alive, can log events if needed
                             }
-                        }
-                        Err(e) => eprintln!("Failed to spawn Whisper sidecar: {}", e),
+                        });
                     }
-                });
+                    Err(e) => eprintln!("Failed to spawn Whisper sidecar: {}", e),
+                }
             } else {
                 eprintln!("Whisper sidecar not found in config");
             }
@@ -225,6 +240,7 @@ pub fn run() {
             cloud_sync_disconnect,
             cloud_sync_status,
             cloud_sync_now,
+            kill_sidecar,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
