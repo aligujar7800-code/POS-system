@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -63,6 +63,7 @@ function ProtectedRoute({ children, permission }: { children: React.ReactNode; p
 
 export default function App() {
   const { user } = useAuthStore();
+  const [isUpdating, setIsUpdating] = useState(false);
   const { language, setSettings } = useSettingsStore();
   const { setBusinessType } = useBusinessStore();
   const { i18n } = useTranslation();
@@ -119,14 +120,20 @@ export default function App() {
           
           if (yes) {
             console.log('Downloading and installing update...');
-            await update.downloadAndInstall();
-            console.log('Update installed successfully!');
+            setIsUpdating(true);
             try {
-              await cmd('kill_sidecar');
+              await update.downloadAndInstall();
+              console.log('Update installed successfully!');
+              try {
+                await cmd('kill_sidecar');
+              } catch (err) {
+                console.error('Failed to kill sidecar:', err);
+              }
+              await relaunch();
             } catch (err) {
-              console.error('Failed to kill sidecar:', err);
+              console.error('Update failed:', err);
+              setIsUpdating(false);
             }
-            await relaunch();
           }
         } else {
           console.log('No update available.');
@@ -147,20 +154,33 @@ export default function App() {
     i18n.changeLanguage(language);
   }, [language, i18n]);
 
+  const updatingOverlay = isUpdating ? (
+    <div className="fixed inset-0 z-[9999] bg-black/80 flex flex-col items-center justify-center text-white backdrop-blur-sm">
+      <div className="w-16 h-16 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mb-6" />
+      <h2 className="text-3xl font-bold mb-3">Downloading Update...</h2>
+      <p className="text-lg text-gray-300">Please wait. Do not close the application.</p>
+    </div>
+  ) : null;
+
   if (!user) {
     return (
-      <Toaster>
-        <LicenseGate>
-          <LoginPage />
-        </LicenseGate>
-      </Toaster>
+      <>
+        {updatingOverlay}
+        <Toaster>
+          <LicenseGate>
+            <LoginPage />
+          </LicenseGate>
+        </Toaster>
+      </>
     );
   }
 
   return (
-    <Toaster>
-      <LicenseGate>
-      <AppShell>
+    <>
+      {updatingOverlay}
+      <Toaster>
+        <LicenseGate>
+        <AppShell>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/"           element={<Navigate to="/sales" replace />} />
@@ -188,5 +208,6 @@ export default function App() {
       </AppShell>
     </LicenseGate>
   </Toaster>
+  </>
   );
 }
