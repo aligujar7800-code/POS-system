@@ -80,7 +80,7 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
           size: v.size,
           color: v.color,
           price: showDiscount ? salePrice : (v.variant_price || product.sale_price),
-          barcode: v.variant_barcode || '',
+          barcode: showDiscount ? `${v.variant_barcode}$${salePrice}` : (v.variant_barcode || ''),
           quantity: v.printQty,
           protocol: settings.label_printer_protocol,
           offset_x: settings.label_offset_x,
@@ -171,7 +171,7 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
             {/* Row 4: Barcode */}
             <div className="flex justify-center mt-auto">
               <Barcode 
-                value={items.find(i => i.printQty > 0)?.variant_barcode || '12345678'} 
+                value={items.find(i => i.printQty > 0) ? (showDiscount ? `${items.find(i => i.printQty > 0)!.variant_barcode}$${salePrice}` : (items.find(i => i.printQty > 0)!.variant_barcode || '12345678')) : '12345678'} 
                 width={1.4} 
                 height={45} 
                 fontSize={12}

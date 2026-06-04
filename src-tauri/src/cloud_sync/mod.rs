@@ -5,61 +5,122 @@ pub mod sync_queue;
 use crate::commands::DbState;
 use std::path::PathBuf;
 
+fn log_sync_event(app_data_dir: &PathBuf, message: &str) {
+    let log_path = app_data_dir.join("cloud_sync.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        use std::io::Write;
+        let timestamp = chrono::Local::now().to_rfc3339();
+        let _ = writeln!(file, "[{}] {}", timestamp, message);
+    }
+}
+
 /// Main function called after a sale is created — fire-and-forget
 pub async fn sync_sale_background(
     app_data_dir: &PathBuf,
     db: &DbState,
     sale_id: i64,
 ) -> Result<(), String> {
+    log_sync_event(app_data_dir, &format!("--- Start background sync for sale {} ---", sale_id));
+
     // Check if cloud sync is configured
     let cfg = match config::load_sync_config(app_data_dir) {
         Some(c) => c,
-        None => return Ok(()), // Not connected, skip silently
+        None => {
+            log_sync_event(app_data_dir, "Background sync skipped: Cloud sync not configured");
+            return Ok(());
+        }
     };
+
+    log_sync_event(app_data_dir, &format!("Store connected: {}, Owner: {}", cfg.store_name, cfg.owner_email));
 
     // Check internet
     if !check_internet().await {
         // Queue for later
-        sync_queue::enqueue(app_data_dir, sync_queue::SyncItem::Sale { local_id: sale_id })?;
-        eprintln!("[CloudSync] No internet — queued sale {}", sale_id);
+        if let Err(e) = sync_queue::enqueue(app_data_dir, sync_queue::SyncItem::Sale { local_id: sale_id }) {
+            log_sync_event(app_data_dir, &format!("No internet & failed to queue sale: {}", e));
+        } else {
+            log_sync_event(app_data_dir, &format!("No internet — queued sale {}", sale_id));
+        }
         return Ok(());
     }
 
     // Read sale data from local DB
-    let (sale_data, customer_data) = {
+    let (sale_data, customer_data) = match {
         let conn = db.lock();
-        let sale = read_sale_for_sync(&conn, sale_id)?;
-        let customer = if let Some(cid) = sale.customer_id {
-            read_customer_for_sync(&conn, cid).ok()
-        } else {
-            None
-        };
-        (sale, customer)
+        read_sale_for_sync(&conn, sale_id).map(|sale| {
+            let customer = if let Some(cid) = sale.customer_id {
+                read_customer_for_sync(&conn, cid).ok()
+            } else {
+                None
+            };
+            (sale, customer)
+        })
+    } {
+        Ok(data) => data,
+        Err(err) => {
+            log_sync_event(app_data_dir, &format!("DB Error reading sale: {}", err));
+            return Err(err);
+        }
     };
+
+    log_sync_event(app_data_dir, &format!("Read sale local_id: {}, amount: {}, payments: {}", sale_data.local_id, sale_data.amount, sale_data.payment_method));
 
     // Push sale to Supabase
     if let Err(e) = supabase::upsert_sale(&cfg.store_id, &sale_data).await {
-        eprintln!("[CloudSync] Sale sync failed: {} — queuing", e);
-        sync_queue::enqueue(app_data_dir, sync_queue::SyncItem::Sale { local_id: sale_id })?;
+        log_sync_event(app_data_dir, &format!("Supabase upsert sale failed: {} — queuing", e));
+        let _ = sync_queue::enqueue(app_data_dir, sync_queue::SyncItem::Sale { local_id: sale_id });
         return Err(e);
     }
+
+    log_sync_event(app_data_dir, &format!("Sale {} upserted successfully", sale_id));
 
     // Push customer if present
     if let Some(cust) = customer_data {
         if let Err(e) = supabase::upsert_customer(&cfg.store_id, &cust).await {
-            eprintln!("[CloudSync] Customer sync failed: {}", e);
+            log_sync_event(app_data_dir, &format!("Customer {} upsert failed: {}", cust.local_id, e));
+        } else {
+            log_sync_event(app_data_dir, &format!("Customer {} upserted successfully", cust.local_id));
         }
     }
 
     // Check and sync daily summary if needed
-    let _ = check_and_sync_daily_summary(app_data_dir, db, &cfg).await;
+    if let Err(e) = check_and_sync_daily_summary(app_data_dir, db, &cfg).await {
+        log_sync_event(app_data_dir, &format!("Daily summary sync failed/skipped: {}", e));
+    } else {
+        log_sync_event(app_data_dir, "Daily summary checked/synced");
+    }
+
+    // Sync today's summary as well so the mobile dashboard updates instantly
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today_summary_res = {
+        let conn = db.lock();
+        compute_daily_summary(&conn, &today)
+    };
+    match today_summary_res {
+        Ok(summary) => {
+            if summary.total_sales > 0.0 {
+                if let Err(e) = supabase::upsert_daily_summary(&cfg.store_id, &summary).await {
+                    log_sync_event(app_data_dir, &format!("Failed to sync today's summary: {}", e));
+                } else {
+                    log_sync_event(app_data_dir, "Today's summary synced successfully");
+                }
+            }
+        }
+        Err(e) => {
+            log_sync_event(app_data_dir, &format!("Failed to compute today's summary: {}", e));
+        }
+    }
 
     // Update last sync time
     let mut updated_cfg = cfg;
     updated_cfg.last_sync = Some(chrono::Utc::now().to_rfc3339());
     let _ = config::save_sync_config(app_data_dir, &updated_cfg);
 
-    eprintln!("[CloudSync] Sale {} synced successfully", sale_id);
+    log_sync_event(app_data_dir, &format!("--- Success background sync for sale {} ---", sale_id));
     Ok(())
 }
 
@@ -71,6 +132,7 @@ pub async fn process_sync_queue(app_data_dir: &PathBuf, db: &DbState) -> Result<
     };
 
     if !check_internet().await {
+        log_sync_event(app_data_dir, "Queue check skipped: No internet");
         return Ok(0);
     }
 
@@ -79,10 +141,18 @@ pub async fn process_sync_queue(app_data_dir: &PathBuf, db: &DbState) -> Result<
         return Ok(0);
     }
 
+    log_sync_event(app_data_dir, &format!("Processing offline sync queue ({} items)...", queue.len()));
+
     let mut synced = 0;
     let mut remaining = Vec::new();
 
     for item in queue {
+        let item_desc = match &item.item {
+            sync_queue::SyncItem::Sale { local_id } => format!("Sale {}", local_id),
+            sync_queue::SyncItem::Customer { local_id } => format!("Customer {}", local_id),
+            sync_queue::SyncItem::DailySummary { date } => format!("DailySummary {}", date),
+        };
+
         let result = match &item.item {
             sync_queue::SyncItem::Sale { local_id } => {
                 let sale_res = {
@@ -117,12 +187,18 @@ pub async fn process_sync_queue(app_data_dir: &PathBuf, db: &DbState) -> Result<
         };
 
         match result {
-            Ok(_) => synced += 1,
-            Err(_) => {
+            Ok(_) => {
+                log_sync_event(app_data_dir, &format!("Queue sync success: {}", item_desc));
+                synced += 1;
+            }
+            Err(e) => {
+                log_sync_event(app_data_dir, &format!("Queue sync failed for {}: {}", item_desc, e));
                 let mut retry = item;
                 retry.retry_count += 1;
                 if retry.retry_count < 10 {
                     remaining.push(retry);
+                } else {
+                    log_sync_event(app_data_dir, &format!("Queue item {} discarded after 10 attempts", item_desc));
                 }
             }
         }
@@ -134,6 +210,7 @@ pub async fn process_sync_queue(app_data_dir: &PathBuf, db: &DbState) -> Result<
         let mut updated_cfg = cfg;
         updated_cfg.last_sync = Some(chrono::Utc::now().to_rfc3339());
         let _ = config::save_sync_config(app_data_dir, &updated_cfg);
+        log_sync_event(app_data_dir, &format!("Queue processed: {} items synced successfully", synced));
     }
 
     Ok(synced)
@@ -181,10 +258,13 @@ async fn check_and_sync_daily_summary(
 
 /// Manual full sync — syncs today's sales, all customers, and daily summary
 pub async fn manual_full_sync(app_data_dir: &PathBuf, db: &DbState) -> Result<serde_json::Value, String> {
+    log_sync_event(app_data_dir, "--- Start manual full sync ---");
+
     let cfg = config::load_sync_config(app_data_dir)
         .ok_or("Cloud sync not connected")?;
 
     if !check_internet().await {
+        log_sync_event(app_data_dir, "Manual sync failed: No internet connection");
         return Err("No internet connection".into());
     }
 
@@ -205,13 +285,16 @@ pub async fn manual_full_sync(app_data_dir: &PathBuf, db: &DbState) -> Result<se
         ids
     };
 
+    log_sync_event(app_data_dir, &format!("Manual sync: Found {} sales for date {}", sale_ids.len(), today));
+
     for sid in &sale_ids {
         let sale = {
             let conn = db.lock();
             read_sale_for_sync(&conn, *sid)?
         };
-        if supabase::upsert_sale(&cfg.store_id, &sale).await.is_ok() {
-            sales_synced += 1;
+        match supabase::upsert_sale(&cfg.store_id, &sale).await {
+            Ok(_) => sales_synced += 1,
+            Err(e) => log_sync_event(app_data_dir, &format!("Manual sync: Failed to upsert sale {}: {}", sid, e)),
         }
     }
 
@@ -227,18 +310,23 @@ pub async fn manual_full_sync(app_data_dir: &PathBuf, db: &DbState) -> Result<se
         ids
     };
 
+    log_sync_event(app_data_dir, &format!("Manual sync: Found {} total customers to sync", customer_ids.len()));
+
     for cid in &customer_ids {
         let cust = {
             let conn = db.lock();
             read_customer_for_sync(&conn, *cid)?
         };
-        if supabase::upsert_customer(&cfg.store_id, &cust).await.is_ok() {
-            customers_synced += 1;
+        match supabase::upsert_customer(&cfg.store_id, &cust).await {
+            Ok(_) => customers_synced += 1,
+            Err(e) => log_sync_event(app_data_dir, &format!("Manual sync: Failed to upsert customer {}: {}", cid, e)),
         }
     }
 
     // Sync daily summary
-    let _ = check_and_sync_daily_summary(app_data_dir, db, &cfg).await;
+    if let Err(e) = check_and_sync_daily_summary(app_data_dir, db, &cfg).await {
+        log_sync_event(app_data_dir, &format!("Manual sync: Daily summary sync failed/skipped: {}", e));
+    }
 
     // Also sync today's summary
     let today_summary = {
@@ -246,16 +334,21 @@ pub async fn manual_full_sync(app_data_dir: &PathBuf, db: &DbState) -> Result<se
         compute_daily_summary(&conn, &today)?
     };
     if today_summary.total_sales > 0.0 {
-        let _ = supabase::upsert_daily_summary(&cfg.store_id, &today_summary).await;
+        if let Err(e) = supabase::upsert_daily_summary(&cfg.store_id, &today_summary).await {
+            log_sync_event(app_data_dir, &format!("Manual sync: Today's summary sync failed: {}", e));
+        }
     }
 
     // Process offline queue
+    log_sync_event(app_data_dir, "Manual sync: Processing offline queue");
     let queued = process_sync_queue(app_data_dir, db).await.unwrap_or(0);
 
     // Update last sync
     let mut updated_cfg = cfg;
     updated_cfg.last_sync = Some(chrono::Utc::now().to_rfc3339());
     let _ = config::save_sync_config(app_data_dir, &updated_cfg);
+
+    log_sync_event(app_data_dir, &format!("--- Manual sync complete: {} sales, {} customers synced ---", sales_synced, customers_synced));
 
     Ok(serde_json::json!({
         "sales_synced": sales_synced,

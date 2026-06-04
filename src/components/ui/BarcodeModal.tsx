@@ -43,7 +43,7 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
           size: product.size,
           color: product.color,
           price: showDiscount ? salePrice : product.price,
-          barcode: product.barcode,
+          barcode: showDiscount ? `${product.barcode}$${salePrice}` : product.barcode,
           quantity: quantity,
           template: 'small',
           protocol: settings.label_printer_protocol,
@@ -130,7 +130,7 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
               {/* Row 4: Barcode */}
               <div className="flex justify-center mt-auto">
                 <Barcode 
-                  value={product.barcode} 
+                  value={showDiscount ? `${product.barcode}$${salePrice}` : product.barcode} 
                   width={1.4} 
                   height={45} 
                   fontSize={12}

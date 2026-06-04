@@ -263,12 +263,26 @@ export default function SalesPage() {
   });
 
   // Barcode handler
-  const handleBarcode = useCallback(async (barcode: string) => {
+  const handleBarcode = useCallback(async (scannedCode: string) => {
     const now = Date.now();
     if (now - lastScanTimeRef.current < (camera_scan_interval || 2000)) {
       return; // Debounce
     }
     lastScanTimeRef.current = now;
+
+    let barcode = scannedCode;
+    let overridePrice: number | null = null;
+    
+    if (barcode.includes('$')) {
+      const parts = barcode.split('$');
+      if (parts.length === 2) {
+        barcode = parts[0];
+        const parsedPrice = parseFloat(parts[1]);
+        if (!isNaN(parsedPrice)) {
+          overridePrice = parsedPrice;
+        }
+      }
+    }
 
     try {
       const product = await cmd<Product | null>('get_product_by_barcode', { barcode });
@@ -301,7 +315,7 @@ export default function SalesPage() {
           product_name: nameStr,
           barcode: variant?.variant_barcode || product.barcode,
           quantity: 1,
-          unit_price: variant?.variant_price ?? product.sale_price,
+          unit_price: overridePrice !== null ? overridePrice : (variant?.variant_price ?? product.sale_price),
           discount: 0,
           discount_type: 'amount',
         });

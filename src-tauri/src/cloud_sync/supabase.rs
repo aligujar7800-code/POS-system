@@ -117,7 +117,8 @@ pub async fn upsert_sale(store_id: &str, sale: &super::SaleSyncData) -> Result<(
         "created_at": sale.created_at,
     });
 
-    let mut req = client.post(&rest_url("sales")).body(payload.to_string());
+    let url = format!("{}?on_conflict=store_id,local_id", rest_url("sales"));
+    let mut req = client.post(&url).body(payload.to_string());
     for (k, v) in auth_headers() {
         req = req.header(k, v);
     }
@@ -150,7 +151,8 @@ pub async fn upsert_customer(store_id: &str, cust: &super::CustomerSyncData) -> 
         "last_visit": cust.last_visit,
     });
 
-    let mut req = client.post(&rest_url("customers")).body(payload.to_string());
+    let url = format!("{}?on_conflict=store_id,local_id", rest_url("customers"));
+    let mut req = client.post(&url).body(payload.to_string());
     for (k, v) in auth_headers() {
         req = req.header(k, v);
     }
@@ -185,8 +187,9 @@ pub async fn upsert_daily_summary(
         "top_products": summary.top_products,
     });
 
+    let url = format!("{}?on_conflict=store_id,date", rest_url("daily_summary"));
     let mut req = client
-        .post(&rest_url("daily_summary"))
+        .post(&url)
         .body(payload.to_string());
     for (k, v) in auth_headers() {
         req = req.header(k, v);
