@@ -71,6 +71,34 @@ export default function InwardPage() {
   const [newCost, setNewCost] = useState('');
   const [newSale, setNewSale] = useState('');
 
+  // Bulk Edit
+  const [bulkCost, setBulkCost] = useState('');
+  const [bulkSale, setBulkSale] = useState('');
+  const [bulkQty, setBulkQty] = useState('');
+
+  const applyBulkEdit = () => {
+    if (!bulkCost && !bulkSale && !bulkQty) return;
+    setVariantInputs(prev => {
+      const next = { ...prev };
+      productVariants.forEach((v: any) => {
+        next[v.id] = {
+          ...next[v.id],
+          ...(bulkCost && { cost_price: bulkCost }),
+          ...(bulkSale && { sale_price: bulkSale }),
+          ...(bulkQty && { quantity: bulkQty }),
+        };
+      });
+      return next;
+    });
+    
+    // Also apply to the "New Variation" fields if they are being used
+    if (bulkCost) setNewCost(bulkCost);
+    if (bulkSale) setNewSale(bulkSale);
+    if (bulkQty) setNewQuantity(bulkQty);
+
+    setBulkCost(''); setBulkSale(''); setBulkQty('');
+  };
+
   // ── Cart & Voucher ──────────────────────────────────────
   const [cart, setCart] = useState<CartItem[]>([]);
   const [supplierId, setSupplierId] = useState<number | null>(null);
@@ -359,6 +387,21 @@ export default function InwardPage() {
                   <div style={{ width: 28, height: 28, borderRadius: 8, background: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>2</div>
                   <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1e293b', margin: 0 }}>Stock Receiving Details</h3>
                 </div>
+
+                {/* Bulk Fill Section */}
+                {productVariants.length > 1 && (
+                  <div style={{ padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#6366f1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      ⚡ Bulk Fill (Apply to all variants below)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', gap: 8 }}>
+                      <input type="number" placeholder="Cost Price" value={bulkCost} onChange={e => setBulkCost(e.target.value)} style={{ padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }} />
+                      <input type="number" placeholder="Sale Price" value={bulkSale} onChange={e => setBulkSale(e.target.value)} style={{ padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }} />
+                      <input type="number" placeholder="Qty" value={bulkQty} onChange={e => setBulkQty(e.target.value)} style={{ padding: '8px', borderRadius: 6, border: '2px solid #cbd5e1', fontSize: 13, fontWeight: 'bold' }} />
+                      <button onClick={applyBulkEdit} style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Apply All</button>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 100px 80px', gap: 8, fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8, padding: '0 4px' }}>
