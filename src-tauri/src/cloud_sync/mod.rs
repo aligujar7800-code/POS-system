@@ -488,7 +488,7 @@ fn compute_daily_summary(conn: &rusqlite::Connection, date: &str) -> Result<Dail
         .query_map(rusqlite::params![date], |r| {
             Ok(serde_json::json!({
                 "name": r.get::<_, String>(0)?,
-                "qty": r.get::<_, i64>(1)?,
+                "quantity": r.get::<_, i64>(1)?,
                 "revenue": r.get::<_, f64>(2)?,
             }))
         })
