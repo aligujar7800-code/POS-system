@@ -21,6 +21,7 @@ pub struct Product {
     pub is_active: bool,
     pub article_number: Option<String>,
     pub product_meta: Option<String>,
+    pub last_supplier: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -593,7 +594,8 @@ fn product_select_sql() -> String {
             p.is_active,
             NULL as variant_summary,
             p.article_number,
-            p.product_meta
+            p.product_meta,
+            (SELECT REPLACE(reason, 'Inward Stock from ', '') FROM stock_history WHERE product_id = p.id AND reason LIKE 'Inward Stock from %' ORDER BY id DESC LIMIT 1) as last_supplier
      FROM products p
      LEFT JOIN categories c ON c.id = p.category_id"
         .to_string()
@@ -619,6 +621,7 @@ fn map_product(row: &rusqlite::Row) -> rusqlite::Result<Product> {
         variant_summary: row.get(15)?,
         article_number: row.get(16)?,
         product_meta: row.get(17)?,
+        last_supplier: row.get(18)?,
     })
 }
 

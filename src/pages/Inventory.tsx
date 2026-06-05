@@ -19,6 +19,7 @@ interface Product {
   category_name?: string; brand?: string; sale_price: number;
   cost_price: number; total_stock: number; low_stock_threshold: number;
   image_path?: string; variant_summary?: string; article_number?: string;
+  last_supplier?: string;
 }
 
 interface ProductVariant {
@@ -251,6 +252,7 @@ export default function InventoryPage() {
               <th>Product</th>
               <th>SKU / Barcode</th>
               <th>Category</th>
+              <th>Supplier</th>
               <th>Variants & Prices</th>
               {moduleColumns.map(col => (
                 <th key={col.key} style={col.width ? { width: col.width } : undefined}>{col.label}</th>
@@ -261,9 +263,9 @@ export default function InventoryPage() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('common.noData')}</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.noData')}</td></tr>
             ) : (
               filtered.map((p) => (
                 <React.Fragment key={p.id}>
@@ -289,6 +291,15 @@ export default function InventoryPage() {
                     {p.barcode && <p className="text-xs text-slate-400">{p.barcode}</p>}
                   </td>
                   <td className="text-slate-500 text-sm">{p.category_name ?? '—'}</td>
+                  <td>
+                    {p.last_supplier ? (
+                      <span className="bg-brand-50 text-brand-600 border border-brand-100 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+                        {p.last_supplier}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
                   <td>
                     <div className="flex items-center gap-1 text-[10px] font-bold text-brand-600/60 uppercase tracking-tighter">
                       <ChevronDown className={`w-3 h-3 transition-transform ${expandedProductId === p.id ? 'rotate-180 text-brand-600' : ''}`} />
@@ -341,7 +352,7 @@ export default function InventoryPage() {
                 {/* Expanded Variants Row */}
                 {expandedProductId === p.id && (
                   <tr>
-                    <td colSpan={6} className="p-0 bg-slate-50/50">
+                    <td colSpan={7} className="p-0 bg-slate-50/50">
                       <div className="px-6 py-4 border-b border-slate-200">
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">

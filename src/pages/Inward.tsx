@@ -134,8 +134,8 @@ export default function InwardPage() {
             color: v.color || '',
             size: v.size || '',
             quantity: q,
-            cost_price: parseFloat(inputs.cost_price) || parseFloat(v.variant_price) || parseFloat(selectedProduct.cost_price) || 0,
-            sale_price: parseFloat(inputs.sale_price) || parseFloat(v.variant_price) || parseFloat(selectedProduct.sale_price) || 0,
+            cost_price: inputs.cost_price ? parseFloat(inputs.cost_price) : (parseFloat(selectedProduct.cost_price) || 0),
+            sale_price: inputs.sale_price ? parseFloat(inputs.sale_price) : (parseFloat(v.variant_price) || parseFloat(selectedProduct.sale_price) || 0),
           });
           added++;
         }
