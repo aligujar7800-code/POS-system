@@ -70,15 +70,6 @@ pub fn generate_key_for_machine(machine_id: &str, month_offset: i32) -> String {
     format!("CPOS-{}-{}-{}-{}", &hex_str[0..4], &hex_str[4..8], &hex_str[8..12], &hex_str[12..16])
 }
 
-pub fn generate_old_key_for_machine(machine_id: &str) -> String {
-    let input = format!("{}{}", machine_id, LICENSE_SECRET);
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(input.as_bytes());
-    let result = hasher.finalize();
-    let hex_str: String = result.iter().map(|b| format!("{:02X}", b)).collect();
-    format!("CPOS-{}-{}-{}-{}", &hex_str[0..4], &hex_str[4..8], &hex_str[8..12], &hex_str[12..16])
-}
-
 /// Calculate days remaining from an expiry date string
 fn calc_days_remaining(expiry_str: &str) -> i64 {
     if let Ok(expiry) = chrono::NaiveDate::parse_from_str(expiry_str, "%Y-%m-%d") {
@@ -197,9 +188,8 @@ pub async fn activate_license(db: tauri::State<'_, crate::commands::DbState>, ke
     let expected_current = generate_key_for_machine(&machine_id, 0);
     let expected_prev = generate_key_for_machine(&machine_id, -1);
     let expected_next = generate_key_for_machine(&machine_id, 1);
-    let old_expected = generate_old_key_for_machine(&machine_id);
 
-    if upper_key != expected_current && upper_key != expected_prev && upper_key != expected_next && upper_key != old_expected {
+    if upper_key != expected_current && upper_key != expected_prev && upper_key != expected_next {
         return Err("Invalid license key.".to_string());
     }
 
@@ -207,7 +197,7 @@ pub async fn activate_license(db: tauri::State<'_, crate::commands::DbState>, ke
     {
         let conn = db.lock();
         let current_db_key: Option<String> = conn.query_row(
-            "SELECT license_key FROM app_license WHERE id = 1 AND status = 'active'",
+            "SELECT license_key FROM app_license WHERE id = 1",
             [],
             |row| row.get(0)
         ).ok();
