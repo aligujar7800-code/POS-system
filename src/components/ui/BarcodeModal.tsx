@@ -43,7 +43,7 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
           size: product.size,
           color: product.color,
           price: showDiscount ? salePrice : product.price,
-          barcode: showDiscount ? `${product.barcode}$${salePrice}` : product.barcode,
+          barcode: product.barcode,
           quantity: quantity,
           template: 'small',
           protocol: settings.label_printer_protocol,
@@ -79,8 +79,8 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
-        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
+      <div className="relative w-full max-w-2xl max-h-[95vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center text-brand-600">
               <Tag className="w-5 h-5" />
@@ -92,82 +92,144 @@ export default function BarcodeModal({ isOpen, onClose, product }: BarcodeModalP
           </button>
         </div>
 
-        <div className="p-6">
-          <div className="flex flex-col items-center gap-6">
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="p-6 flex flex-col items-center gap-6">
             {/* Barcode Preview */}
-            <div 
-              className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col transition-all overflow-hidden"
-              style={{
-                width: '280px',
-                minHeight: '160px',
-                fontFamily: "'Courier New', Courier, monospace"
-              }}
-            >
-              {/* Row 1: Product Name + Size */}
-              <div className="flex justify-between items-start mb-1">
-                <span className="font-extrabold text-[13px] text-slate-900 uppercase leading-tight truncate flex-1">{product.name}</span>
-                {product.size && <span className="text-[12px] font-bold text-slate-700 ml-2 whitespace-nowrap">{product.size}</span>}
-              </div>
+            <div className="flex flex-col w-full">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-2">Live Physical Label Preview (2-Across Layout)</p>
+              
+              <div 
+                className="grid gap-4 p-4 bg-slate-200/50 rounded-xl mx-auto justify-center"
+                style={{ gridTemplateColumns: '280px 280px', transform: 'scale(0.85)', transformOrigin: 'top center', marginBottom: '-24px' }}
+              >
+                {Array.from({ length: Math.min(quantity, 10) }).map((_, index) => (
+                  <div 
+                    key={index}
+                    className="bg-white p-4 rounded-xl shadow-sm flex flex-col transition-all overflow-hidden relative shrink-0"
+                    style={{
+                      width: '280px',
+                      minHeight: '160px',
+                      fontFamily: "'Courier New', Courier, monospace",
+                      transform: `translate(${settings.label_offset_x}px, ${settings.label_offset_y}px)`
+                    }}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="font-extrabold text-[13px] text-slate-900 uppercase leading-tight truncate flex-1">{product.name}</span>
+                      {product.size && <span className="text-[12px] font-bold text-slate-700 ml-2 whitespace-nowrap">{product.size}</span>}
+                    </div>
 
-              {/* Row 2: Article/SKU + Color */}
-              <div className="flex justify-between items-center mb-1">
-                {product.sku && <span className="text-[10px] font-bold text-slate-500 uppercase">ART-{product.sku}</span>}
-                {product.color && <span className="text-[11px] font-semibold text-slate-500">{product.color}</span>}
-              </div>
+                    <div className="flex justify-between items-center mb-1">
+                      {product.sku && <span className="text-[10px] font-bold text-slate-500 uppercase">ART-{product.sku}</span>}
+                      {product.color && <span className="text-[11px] font-semibold text-slate-500">{product.color}</span>}
+                    </div>
 
-              {/* Row 3: Price (MRP + Sale or just Price) */}
-              <div className="flex items-baseline gap-4 mb-2">
-                {showDiscount ? (
-                  <>
-                    <span className="line-through text-[14px] font-extrabold text-slate-400 decoration-2">MRP: {mrpPrice.toLocaleString()}</span>
-                    <span className="text-[16px] font-black text-slate-900">SALE: {salePrice.toLocaleString()}</span>
-                  </>
-                ) : (
-                  <span className="text-[16px] font-black text-slate-900">{settings.currency_symbol} {product.price.toLocaleString()}</span>
-                )}
-              </div>
+                    <div className="flex items-baseline gap-4 mb-2 relative">
+                      {showDiscount ? (
+                        <>
+                          <span className="text-[14px] font-extrabold text-slate-400 decoration-2 relative">
+                            MRP: {mrpPrice.toLocaleString()}
+                            <div className="absolute left-0 w-full bg-slate-600" style={{ height: '2px', top: `${settings.label_mrp_line_offset}px` }}></div>
+                          </span>
+                          <span className="text-[16px] font-black text-slate-900">SALE: {salePrice.toLocaleString()}</span>
+                        </>
+                      ) : (
+                        <span className="text-[16px] font-black text-slate-900">{settings.currency_symbol} {product.price.toLocaleString()}</span>
+                      )}
+                    </div>
 
-              {/* Row 4: Barcode */}
-              <div className="flex justify-center mt-auto">
-                <Barcode 
-                  value={showDiscount ? `${product.barcode}$${salePrice}` : product.barcode} 
-                  width={1.4} 
-                  height={45} 
-                  fontSize={12}
-                  margin={0}
-                  font="'Courier New', monospace"
-                />
+                    <div className="flex justify-center mt-auto" style={{ transform: `scaleX(${settings.label_barcode_width / 2})`, transformOrigin: 'center' }}>
+                      <Barcode 
+                        value={product.barcode || '12345678'} 
+                        width={1.4} 
+                        height={settings.label_barcode_height} 
+                        fontSize={12}
+                        margin={0}
+                        font="'Courier New', monospace"
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
             <div className="w-full space-y-4">
-              <div className="flex gap-4">
-                <div className="flex-[1.5]">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    Alignment (X, Y)
-                  </label>
-                  <div className="flex items-center gap-2 h-10">
+              <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2 mb-3">Label Alignment & Size Settings</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <label className="text-xs text-slate-600">Horizontal Offset (X)</label>
+                      <span className="text-xs font-mono text-slate-400">{settings.label_offset_x}</span>
+                    </div>
                     <input 
-                      type="number"
-                      title="Horizontal Offset (X)"
+                      type="range" min="-100" max="100" 
                       value={settings.label_offset_x}
                       onChange={(e) => settings.setSettings({ label_offset_x: parseInt(e.target.value) || 0 })}
-                      className="flex-1 w-full min-w-0 h-full text-center text-sm font-bold bg-transparent border border-slate-200 rounded-lg focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
-                    />
-                    <input 
-                      type="number"
-                      title="Vertical Offset (Y)"
-                      value={settings.label_offset_y}
-                      onChange={(e) => settings.setSettings({ label_offset_y: parseInt(e.target.value) || 0 })}
-                      className="flex-1 w-full min-w-0 h-full text-center text-sm font-bold bg-transparent border border-slate-200 rounded-lg focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
+                      className="w-full accent-brand-500"
                     />
                   </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <label className="text-xs text-slate-600">Vertical Offset (Y)</label>
+                      <span className="text-xs font-mono text-slate-400">{settings.label_offset_y}</span>
+                    </div>
+                    <input 
+                      type="range" min="-100" max="100" 
+                      value={settings.label_offset_y}
+                      onChange={(e) => settings.setSettings({ label_offset_y: parseInt(e.target.value) || 0 })}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <label className="text-xs text-slate-600">Barcode Width</label>
+                      <span className="text-xs font-mono text-slate-400">{settings.label_barcode_width}</span>
+                    </div>
+                    <input 
+                      type="range" min="1" max="5" 
+                      value={settings.label_barcode_width}
+                      onChange={(e) => settings.setSettings({ label_barcode_width: parseInt(e.target.value) || 2 })}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <label className="text-xs text-slate-600">Barcode Height</label>
+                      <span className="text-xs font-mono text-slate-400">{settings.label_barcode_height}</span>
+                    </div>
+                    <input 
+                      type="range" min="20" max="100" 
+                      value={settings.label_barcode_height}
+                      onChange={(e) => settings.setSettings({ label_barcode_height: parseInt(e.target.value) || 50 })}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+
+                  {showDiscount && (
+                    <div className="col-span-2">
+                      <div className="flex justify-between mb-1">
+                        <label className="text-xs text-slate-600">MRP Cut Line Position (Y)</label>
+                        <span className="text-xs font-mono text-slate-400">{settings.label_mrp_line_offset}</span>
+                      </div>
+                      <input 
+                        type="range" min="-10" max="30" 
+                        value={settings.label_mrp_line_offset}
+                        onChange={(e) => settings.setSettings({ label_mrp_line_offset: parseInt(e.target.value) || 12 })}
+                        className="w-full accent-brand-500"
+                      />
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-slate-100 pt-4">
                 <div className="flex-1">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    Quantity
+                    Print Quantity
                   </label>
-                  <div className="flex items-center gap-2 h-10">
+                  <div className="flex items-center gap-2 h-10 w-32">
                     <button 
                       onClick={() => setQuantity(q => Math.max(1, q - 1))}
                       className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 text-slate-600 text-sm"

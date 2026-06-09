@@ -18,6 +18,10 @@ interface Settings {
   label_printer_protocol: 'epl' | 'zpl' | 'tspl';
   label_offset_x: number;
   label_offset_y: number;
+  label_barcode_width: number;
+  label_barcode_height: number;
+  label_font_size: number;
+  label_mrp_line_offset: number;
   language: string;
   low_stock_threshold: number;
   logo_width: number;
@@ -35,7 +39,6 @@ interface Settings {
 
 interface SettingsState extends Settings {
   setSettings: (s: Partial<Settings>) => void;
-  language: string;
   setLanguage: (lang: string) => void;
 }
 
@@ -58,6 +61,10 @@ export const useSettingsStore = create<SettingsState>()(
       label_printer_protocol: 'epl',
       label_offset_x: 0,
       label_offset_y: 0,
+      label_barcode_width: 2,
+      label_barcode_height: 50,
+      label_font_size: 3,
+      label_mrp_line_offset: 12,
       language: 'en',
       low_stock_threshold: 5,
       logo_width: 120,

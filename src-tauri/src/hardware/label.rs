@@ -17,6 +17,9 @@ pub struct LabelData {
     pub protocol: String, // "zpl" | "tspl" | "epl"
     pub offset_x: Option<i32>,
     pub offset_y: Option<i32>,
+    pub barcode_width: Option<i32>,
+    pub barcode_height: Option<i32>,
+    pub mrp_line_offset: Option<i32>,
     pub mrp: Option<f64>,  // Original price before discount
 }
 
@@ -318,7 +321,8 @@ pub fn build_epl2_label(data: &LabelData) -> String {
             let mrp_text = format!("MRP: {:.0}", mrp);
             s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", x, price_y, mrp_text));
             let mrp_width = mrp_text.len() as i32 * 10;
-            s.push_str(&format!("LO{},{},{},2\n", x, price_y + 8, mrp_width));
+            let line_y_offset = data.mrp_line_offset.unwrap_or(12);
+            s.push_str(&format!("LO{},{},{},2\n", x, price_y + line_y_offset, mrp_width));
             let sale_text = format!("SALE: {:.0}", data.price);
             let sale_x = x + label_w / 2 + 10;
             s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", sale_x, price_y, sale_text));
@@ -327,7 +331,9 @@ pub fn build_epl2_label(data: &LabelData) -> String {
         }
 
         // Row 4: Barcode (Code 128, with human readable text below)
-        s.push_str(&format!("B{},{},0,1,2,2,50,B,\"{}\"\n", x, barcode_y, data.barcode));
+        let b_width = data.barcode_width.unwrap_or(2);
+        let b_height = data.barcode_height.unwrap_or(50);
+        s.push_str(&format!("B{},{},0,1,{},2,{},B,\"{}\"\n", x, barcode_y, b_width, b_height, data.barcode));
 
         s
     };
@@ -375,6 +381,9 @@ pub struct LabelBatchItem {
     pub protocol: Option<String>,
     pub offset_x: Option<i32>,
     pub offset_y: Option<i32>,
+    pub barcode_width: Option<i32>,
+    pub barcode_height: Option<i32>,
+    pub mrp_line_offset: Option<i32>,
     pub mrp: Option<f64>,  // Original price before discount
 }
 
@@ -436,7 +445,9 @@ pub fn build_epl2_batch(items: &[LabelBatchItem], _shop_name: &str) -> String {
             let mrp_text = format!("MRP: {:.0}", mrp);
             s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", x, price_y, mrp_text));
             let mrp_width = mrp_text.len() as i32 * 10;
-            s.push_str(&format!("LO{},{},{},2\n", x, price_y + 8, mrp_width));
+            // Use the custom mrp_line_offset (defaults to 12 if not provided)
+            let line_y_offset = item.mrp_line_offset.unwrap_or(12);
+            s.push_str(&format!("LO{},{},{},2\n", x, price_y + line_y_offset, mrp_width));
             let sale_text = format!("SALE: {:.0}", item.price);
             let sale_x = x + label_w / 2 + 10;
             s.push_str(&format!("A{},{},0,3,1,1,N,\"{}\"\n", sale_x, price_y, sale_text));
@@ -445,7 +456,11 @@ pub fn build_epl2_batch(items: &[LabelBatchItem], _shop_name: &str) -> String {
         }
 
         // Row 4: Barcode
-        s.push_str(&format!("B{},{},0,1,2,2,50,B,\"{}\"\n", x, barcode_y, item.barcode));
+        let b_width = item.barcode_width.unwrap_or(2);
+        let b_height = item.barcode_height.unwrap_or(50);
+        // EPL2 Barcode: B{p1},{p2},{p3},{p4},{p5},{p6},{p7},{p8},"{DATA}"
+        // p5 = narrow bar width, p6 = wide bar width
+        s.push_str(&format!("B{},{},0,1,{},2,{},B,\"{}\"\n", x, barcode_y, b_width, b_height, item.barcode));
 
         s
     };
@@ -584,6 +599,9 @@ pub fn test_label_print(config: &PrinterConfig, protocol: &str) -> Result<(), St
         protocol: protocol.to_string(),
         offset_x: Some(0),
         offset_y: Some(0),
+        barcode_width: Some(2),
+        barcode_height: Some(50),
+        mrp_line_offset: Some(12),
         mrp: None,
     };
     print_label(&test_data, config)

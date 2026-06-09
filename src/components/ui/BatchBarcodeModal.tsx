@@ -80,11 +80,14 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
           size: v.size,
           color: v.color,
           price: showDiscount ? salePrice : (v.variant_price || product.sale_price),
-          barcode: showDiscount ? `${v.variant_barcode}$${salePrice}` : (v.variant_barcode || ''),
+          barcode: v.variant_barcode || '',
           quantity: v.printQty,
           protocol: settings.label_printer_protocol,
           offset_x: settings.label_offset_x,
           offset_y: settings.label_offset_y,
+          barcode_width: settings.label_barcode_width,
+          barcode_height: settings.label_barcode_height,
+          mrp_line_offset: settings.label_mrp_line_offset,
           mrp: showDiscount ? mrpPrice : null
         }));
 
@@ -135,49 +138,132 @@ export default function BatchBarcodeModal({ isOpen, onClose, product, variants: 
 
         <div className="flex-1 overflow-y-auto min-h-0">
           <div className="bg-slate-50/50 p-6 border-b border-slate-100 flex flex-col items-center gap-4">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Layout Preview</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Live Physical Label Preview (2-Across Layout)</p>
+          
           <div 
-            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col transition-all overflow-hidden"
-            style={{
-              width: '280px',
-              minHeight: '160px',
-              fontFamily: "'Courier New', Courier, monospace"
-            }}
+            className="grid gap-4 p-4 bg-slate-200/50 rounded-xl mx-auto justify-center"
+            style={{ gridTemplateColumns: '280px 280px', transform: 'scale(0.85)', transformOrigin: 'top center', marginBottom: '-24px' }}
           >
-            {/* Row 1: Product Name + Size */}
-            <div className="flex justify-between items-start mb-1">
-              <span className="font-extrabold text-[13px] text-slate-900 uppercase leading-tight truncate flex-1">{product.name}</span>
-              <span className="text-[12px] font-bold text-slate-700 ml-2 whitespace-nowrap">{items.find(i => i.printQty > 0)?.size || 'Size'}</span>
-            </div>
+            {items.flatMap(item => Array.from({ length: item.printQty }).map(() => item))
+              .slice(0, 20)
+              .map((item, index) => (
+              <div 
+                key={`${item.id}-${index}`}
+                className="bg-white p-4 rounded-xl shadow-sm flex flex-col transition-all overflow-hidden relative shrink-0"
+                style={{
+                  width: '280px',
+                  minHeight: '160px',
+                  fontFamily: "'Courier New', Courier, monospace",
+                  transform: `translate(${settings.label_offset_x}px, ${settings.label_offset_y}px)`
+                }}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <span className="font-extrabold text-[13px] text-slate-900 uppercase leading-tight truncate flex-1">{product.name}</span>
+                  <span className="text-[12px] font-bold text-slate-700 ml-2 whitespace-nowrap">{item.size || 'Size'}</span>
+                </div>
 
-            {/* Row 2: Article/SKU + Color */}
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase">ART-{product.sku}</span>
-              <span className="text-[11px] font-semibold text-slate-500">{items.find(i => i.printQty > 0)?.color || 'Color'}</span>
-            </div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">ART-{product.sku}</span>
+                  <span className="text-[11px] font-semibold text-slate-500">{item.color || 'Color'}</span>
+                </div>
 
-            {/* Row 3: Price */}
-            <div className="flex items-baseline gap-4 mb-2">
-              {showDiscount ? (
-                <>
-                  <span className="line-through text-[14px] font-extrabold text-slate-400 decoration-2">MRP: {mrpPrice.toLocaleString()}</span>
-                  <span className="text-[16px] font-black text-slate-900">SALE: {salePrice.toLocaleString()}</span>
-                </>
-              ) : (
-                <span className="text-[16px] font-black text-slate-900">{settings.currency_symbol} {product.sale_price.toLocaleString()}</span>
+                <div className="flex items-baseline gap-4 mb-2 relative">
+                  {showDiscount ? (
+                    <>
+                      <span className="text-[14px] font-extrabold text-slate-400 decoration-2 relative">
+                        MRP: {mrpPrice.toLocaleString()}
+                        <div className="absolute left-0 w-full bg-slate-600" style={{ height: '2px', top: `${settings.label_mrp_line_offset}px` }}></div>
+                      </span>
+                      <span className="text-[16px] font-black text-slate-900">SALE: {salePrice.toLocaleString()}</span>
+                    </>
+                  ) : (
+                    <span className="text-[16px] font-black text-slate-900">{settings.currency_symbol} {(item.variant_price || product.sale_price || 0).toLocaleString()}</span>
+                  )}
+                </div>
+
+                <div className="flex justify-center mt-auto" style={{ transform: `scaleX(${settings.label_barcode_width / 2})`, transformOrigin: 'center' }}>
+                  <Barcode 
+                    value={item.variant_barcode || '12345678'} 
+                    width={1.4} 
+                    height={settings.label_barcode_height} 
+                    fontSize={12}
+                    margin={0}
+                    font="'Courier New', monospace"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="w-full mt-2 space-y-4 max-w-2xl bg-white p-4 rounded-xl border border-slate-200">
+            <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2">Label Alignment & Size Settings</h4>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-xs text-slate-600">Horizontal Offset (X)</label>
+                  <span className="text-xs font-mono text-slate-400">{settings.label_offset_x}</span>
+                </div>
+                <input 
+                  type="range" min="-100" max="100" 
+                  value={settings.label_offset_x}
+                  onChange={(e) => useSettingsStore.getState().setSettings({ label_offset_x: parseInt(e.target.value) })}
+                  className="w-full accent-brand-500"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-xs text-slate-600">Vertical Offset (Y)</label>
+                  <span className="text-xs font-mono text-slate-400">{settings.label_offset_y}</span>
+                </div>
+                <input 
+                  type="range" min="-100" max="100" 
+                  value={settings.label_offset_y}
+                  onChange={(e) => useSettingsStore.getState().setSettings({ label_offset_y: parseInt(e.target.value) })}
+                  className="w-full accent-brand-500"
+                />
+              </div>
+              
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-xs text-slate-600">Barcode Width</label>
+                  <span className="text-xs font-mono text-slate-400">{settings.label_barcode_width}</span>
+                </div>
+                <input 
+                  type="range" min="1" max="5" 
+                  value={settings.label_barcode_width}
+                  onChange={(e) => useSettingsStore.getState().setSettings({ label_barcode_width: parseInt(e.target.value) })}
+                  className="w-full accent-brand-500"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-xs text-slate-600">Barcode Height</label>
+                  <span className="text-xs font-mono text-slate-400">{settings.label_barcode_height}</span>
+                </div>
+                <input 
+                  type="range" min="20" max="100" 
+                  value={settings.label_barcode_height}
+                  onChange={(e) => useSettingsStore.getState().setSettings({ label_barcode_height: parseInt(e.target.value) })}
+                  className="w-full accent-brand-500"
+                />
+              </div>
+
+              {showDiscount && (
+                <div className="col-span-2">
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs text-slate-600">MRP Cut Line Position (Y Offset)</label>
+                    <span className="text-xs font-mono text-slate-400">{settings.label_mrp_line_offset}</span>
+                  </div>
+                  <input 
+                    type="range" min="-10" max="30" 
+                    value={settings.label_mrp_line_offset}
+                    onChange={(e) => useSettingsStore.getState().setSettings({ label_mrp_line_offset: parseInt(e.target.value) })}
+                    className="w-full accent-brand-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Adjust this to perfectly strike through the MRP price.</p>
+                </div>
               )}
-            </div>
-
-            {/* Row 4: Barcode */}
-            <div className="flex justify-center mt-auto">
-              <Barcode 
-                value={items.find(i => i.printQty > 0) ? (showDiscount ? `${items.find(i => i.printQty > 0)!.variant_barcode}$${salePrice}` : (items.find(i => i.printQty > 0)!.variant_barcode || '12345678')) : '12345678'} 
-                width={1.4} 
-                height={45} 
-                fontSize={12}
-                margin={0}
-                font="'Courier New', monospace"
-              />
             </div>
           </div>
         </div>
