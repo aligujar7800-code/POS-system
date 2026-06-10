@@ -121,8 +121,13 @@ pub fn get_license_status(conn: &Connection) -> Result<Option<LicenseInfo>> {
 
                 info.days_remaining = Some(days);
 
-                if days < 0 {
-                    // License has expired — update DB status too
+                if days < 0 && days >= -3 {
+                    info.status = "grace_period".to_string();
+                    let _ = conn.execute(
+                        "UPDATE app_license SET status = 'grace_period' WHERE id = 1",
+                        [],
+                    );
+                } else if days < -3 {
                     info.status = "expired".to_string();
                     let _ = conn.execute(
                         "UPDATE app_license SET status = 'expired' WHERE id = 1",
@@ -149,7 +154,13 @@ pub fn get_license_status(conn: &Connection) -> Result<Option<LicenseInfo>> {
                     info.expiry_date = Some(expiry_str);
                     info.days_remaining = Some(days);
 
-                    if days < 0 {
+                    if days < 0 && days >= -3 {
+                        info.status = "grace_period".to_string();
+                        let _ = conn.execute(
+                            "UPDATE app_license SET status = 'grace_period' WHERE id = 1",
+                            [],
+                        );
+                    } else if days < -3 {
                         info.status = "expired".to_string();
                         let _ = conn.execute(
                             "UPDATE app_license SET status = 'expired' WHERE id = 1",

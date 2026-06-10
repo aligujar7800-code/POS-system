@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toaster';
-import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X, Briefcase, Scan } from 'lucide-react';
+import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X, Briefcase, Scan, Key, Loader2 } from 'lucide-react';
 import ImportWizard from '../components/ImportWizard';
 import BusinessTypeSelector from '../components/modules/BusinessTypeSelector';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -129,6 +129,10 @@ export default function SettingsPage() {
   const [voiceActiveTab, setVoiceActiveTab] = useState<'simple'|'full'>('simple');
   const [newPhrase, setNewPhrase] = useState('');
   const [newAction, setNewAction] = useState('');
+
+  // License Renewal State
+  const [newLicenseKey, setNewLicenseKey] = useState('');
+  const [renewingLicense, setRenewingLicense] = useState(false);
 
   // Always poll sidecar status every 2s so we can show real-time progress
   // and detect when the sidecar comes online or model finishes downloading.
@@ -2809,14 +2813,49 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="pt-2">
-                    <button 
-                      disabled
-                      className="w-full py-3 bg-slate-100 text-slate-400 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 cursor-not-allowed border border-slate-200"
+                  <div className="pt-6 border-t border-slate-100">
+                    <h4 className="font-bold text-slate-800 mb-3 text-sm flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 text-brand-500" />
+                      Proactive License Renewal
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-4">Enter a new license key here to extend your access without waiting for expiration.</p>
+                    <form 
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (!newLicenseKey) return;
+                        setRenewingLicense(true);
+                        try {
+                          await cmd('activate_license', { key: newLicenseKey });
+                          toast('License activated and extended! ✅', 'success');
+                          setNewLicenseKey('');
+                          qc.invalidateQueries({ queryKey: ['licenseInfo'] });
+                        } catch (err: any) {
+                          toast(err.toString(), 'error');
+                        } finally {
+                          setRenewingLicense(false);
+                        }
+                      }}
+                      className="flex gap-3"
                     >
-                      <RotateCw className="w-4 h-4" /> Renewal Not Required
-                    </button>
-                    <p className="text-[10px] text-slate-400 text-center mt-3">
+                      <div className="relative flex-1">
+                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={newLicenseKey}
+                          onChange={(e) => setNewLicenseKey(e.target.value.toUpperCase())}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-slate-700 placeholder:text-slate-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all font-mono text-sm uppercase"
+                          placeholder="CPOS-XXXX-XXXX-XXXX-XXXX"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={renewingLicense || !newLicenseKey}
+                        className="px-6 py-2.5 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-brand-500/20 whitespace-nowrap"
+                      >
+                        {renewingLicense ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Activate'}
+                      </button>
+                    </form>
+                    <p className="text-[10px] text-slate-400 text-center mt-4">
                       Your license is tied to this machine's unique hardware signature.
                     </p>
                   </div>

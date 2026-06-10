@@ -45,7 +45,7 @@ export default function LicenseGate({ children }: LicenseGateProps) {
     try {
       // 1. Try local check first
       const status = await cmd<LicenseStatus>('get_license_status');
-      if (status && status.status === 'active') {
+      if (status && (status.status === 'active' || status.status === 'grace_period')) {
         setLicenseStatus(status);
         setIsLicensed(true);
         return;
@@ -168,7 +168,20 @@ export default function LicenseGate({ children }: LicenseGateProps) {
   }
 
   if (isLicensed) {
-    return <>{children}</>;
+    return (
+      <>
+        {licenseStatus?.status === 'grace_period' && (
+          <div 
+            onClick={() => window.location.hash = '#/settings?tab=license'}
+            className="bg-red-600 text-white p-2 text-center text-sm font-bold shadow-md cursor-pointer hover:bg-red-700 transition-colors z-[9999] relative flex items-center justify-center gap-2"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            Your license has expired. You are using the 3-day grace period. Software will be locked in {3 + (licenseStatus.days_remaining || 0)} days. Click here to Renew.
+          </div>
+        )}
+        {children}
+      </>
+    );
   }
 
   // ─── EXPIRED LICENSE UI ────────────────────────────────────────────────────
