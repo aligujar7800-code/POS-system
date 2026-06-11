@@ -493,20 +493,6 @@ export default function SalesPage() {
         }
       });
       
-      // Auto-trigger invoice print
-      if (printer_type && printer_type !== 'none') {
-        cmd('print_sale_by_id', { 
-          id: id,
-          config: {
-            printer_type,
-            port: printer_port,
-            baud_rate: printer_baud,
-          }
-        }).catch(e => {
-          console.error("Print failed:", e);
-          toast("Failed to print receipt: " + e.toString(), "error");
-        });
-      }
 
       cart.clearCart();
       setPaidAmount('');
@@ -973,7 +959,21 @@ export default function SalesPage() {
         <SaleDetailsModal
           saleId={autoPrintSaleId}
           onClose={() => setAutoPrintSaleId(null)}
-          onReprint={() => {}}
+          onReprint={async () => {
+            if (!printer_type || printer_type === 'none') return;
+            try {
+              await cmd('print_sale_by_id', {
+                id: autoPrintSaleId,
+                config: {
+                  printer_type,
+                  port: printer_port,
+                  baud_rate: printer_baud,
+                }
+              });
+            } catch (e: any) {
+              toast("Print failed: " + e.toString(), "error");
+            }
+          }}
           onReturn={() => {}}
           currency_symbol={currency_symbol}
           printer_type={printer_type}
@@ -1051,11 +1051,6 @@ export default function SalesPage() {
               queryClient.invalidateQueries({ queryKey: ['dashboard'] });
               queryClient.invalidateQueries({ queryKey: ['financial-ledger'] });
 
-              if (printer_type && printer_type !== 'none') {
-                cmd('print_sale_by_id', {
-                  id, config: { printer_type, port: printer_port, baud_rate: printer_baud }
-                }).catch(e => toast("Print failed: " + e.toString(), "error"));
-              }
 
               cart.clearCart();
               setPaidAmount('');

@@ -358,12 +358,16 @@ export function SaleDetailsModal({
   React.useEffect(() => {
     if (data && autoPrint) {
       const timer = setTimeout(() => {
-        window.print();
+        if (printer_type && printer_type !== 'none') {
+          onReprint();
+        } else {
+          window.print();
+        }
         onClose();
       }, 500); // give it a moment to render images/fonts
       return () => clearTimeout(timer);
     }
-  }, [data, autoPrint, onClose]);
+  }, [data, autoPrint, onClose, printer_type, onReprint]);
 
   if (isLoading) {
     return (
