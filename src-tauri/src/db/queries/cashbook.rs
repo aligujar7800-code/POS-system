@@ -74,11 +74,11 @@ pub fn get_financial_ledger(
     ".to_string();
 
     if let Some(_f) = from {
-        sql += " AND date(je.entry_date, 'localtime') >= ?1";
+        sql += " AND date(je.entry_date) >= ?1";
     }
     if let Some(_t) = to {
         let p_idx = if from.is_some() { 2 } else { 1 };
-        sql += &format!(" AND date(je.entry_date, 'localtime') <= ?{}", p_idx);
+        sql += &format!(" AND date(je.entry_date) <= ?{}", p_idx);
     }
     
     sql += " ORDER BY je.entry_date ASC, je.id ASC";

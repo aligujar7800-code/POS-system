@@ -36,6 +36,7 @@ interface SaleItem {
   unit_price: number;
   discount: number;
   total_price: number;
+  returned_quantity?: number;
 }
 
 export default function ReceiptsPage() {
@@ -776,9 +777,17 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
     setExchangeItems(prev => prev.filter((_, i) => i !== index));
   };
 
+  const sumGross = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+  const sumNet = items.reduce((sum, item) => sum + item.total_price, 0);
+  const totalItemDiscount = sumGross - sumNet;
+  const billDiscount = Math.max(0, sale.discount_amount - totalItemDiscount);
+  const discountRatio = sumNet > 0 ? (billDiscount / sumNet) : 0;
+
   const totalRefund = items.reduce((sum, item) => {
     const qty = returnQtys[item.id] || 0;
-    return sum + (qty * item.unit_price);
+    const netItemUnitPrice = item.quantity > 0 ? (item.total_price / item.quantity) : item.unit_price;
+    const refundedUnitPrice = netItemUnitPrice * (1 - discountRatio);
+    return sum + (qty * refundedUnitPrice);
   }, 0);
 
   const totalExchange = exchangeItems.reduce((sum, item) => sum + item.total_price, 0);
@@ -892,29 +901,46 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
                 <thead className="bg-slate-50 sticky top-0">
                   <tr className="border-b border-slate-200 text-slate-600">
                     <th className="p-2 font-semibold text-left">Item Name</th>
-                    <th className="p-2 font-semibold text-center w-16">Return Qty</th>
+                    <th className="p-2 font-semibold text-center w-24">Return Qty</th>
                     <th className="p-2 font-semibold text-center w-16">Damaged?</th>
                     <th className="p-2 font-semibold text-right">Refund</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map(item => (
-                    <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                      <td className="p-2">
-                        <div className="font-medium text-slate-800 truncate" title={item.product_name}>{item.product_name}</div>
-                        <div className="text-xs text-slate-500">{formatCurrency(item.unit_price, currencySymbol)} (Sold: {item.quantity})</div>
-                      </td>
-                      <td className="p-2">
-                        <input type="number" className="input py-1 text-center w-full" value={returnQtys[item.id] || ''} onChange={(e) => handleQtyChange(item.id, parseInt(e.target.value) || 0, item.quantity)} placeholder="0" />
-                      </td>
-                      <td className="p-2 text-center">
-                        <input type="checkbox" className="w-4 h-4 rounded text-rose-600" checked={!!damagedMap[item.id]} onChange={(e) => setDamagedMap(prev => ({ ...prev, [item.id]: e.target.checked }))} />
-                      </td>
-                      <td className="p-2 text-right font-bold text-slate-700">
-                        {formatCurrency((returnQtys[item.id] || 0) * item.unit_price, currencySymbol)}
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map(item => {
+                    const netItemUnitPrice = item.quantity > 0 ? (item.total_price / item.quantity) : item.unit_price;
+                    const refundedUnitPrice = netItemUnitPrice * (1 - discountRatio);
+                    return (
+                      <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                        <td className="p-2">
+                          <div className="font-medium text-slate-800 truncate" title={item.product_name}>{item.product_name}</div>
+                          <div className="text-xs text-slate-500">
+                            {formatCurrency(refundedUnitPrice, currencySymbol)}
+                            {Math.abs(refundedUnitPrice - item.unit_price) > 0.01 && (
+                              <span className="text-slate-400 line-through ml-1.5">
+                                ({formatCurrency(item.unit_price, currencySymbol)})
+                              </span>
+                            )}
+                            <span> (Sold: {item.quantity}{item.returned_quantity > 0 ? `, Returned: ${item.returned_quantity}` : ''})</span>
+                          </div>
+                          {item.discount > 0 && (
+                            <div className="text-xs text-brand-600 mt-0.5 font-medium">
+                              Discount given: {formatCurrency(item.discount, currencySymbol)}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2">
+                          <input type="number" className="input px-1 py-1 text-center w-full font-bold text-brand-700 bg-brand-50/30" value={returnQtys[item.id] ?? ''} onChange={(e) => handleQtyChange(item.id, parseInt(e.target.value) || 0, Math.max(0, item.quantity - (item.returned_quantity || 0)))} placeholder="0" min={0} max={Math.max(0, item.quantity - (item.returned_quantity || 0))} disabled={item.quantity - (item.returned_quantity || 0) <= 0} />
+                        </td>
+                        <td className="p-2 text-center">
+                          <input type="checkbox" className="w-4 h-4 rounded text-rose-600" checked={!!damagedMap[item.id]} onChange={(e) => setDamagedMap(prev => ({ ...prev, [item.id]: e.target.checked }))} />
+                        </td>
+                        <td className="p-2 text-right font-bold text-slate-700">
+                          {formatCurrency((returnQtys[item.id] || 0) * refundedUnitPrice, currencySymbol)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

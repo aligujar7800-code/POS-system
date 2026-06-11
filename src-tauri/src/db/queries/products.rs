@@ -321,6 +321,7 @@ pub fn update_product(
     conn: &Connection,
     id: i64,
     payload: &CreateProductPayload,
+    variants: Option<Vec<VariantPayload>>,
 ) -> Result<()> {
     conn.execute(
         "UPDATE products SET name=?1, barcode=?2, category_id=?3, brand=?4,
@@ -334,6 +335,20 @@ pub fn update_product(
             payload.article_number
         ],
     )?;
+
+    if let Some(vars) = variants {
+        for variant in vars {
+            let size_val = variant.size.clone().unwrap_or_default();
+            let color_val = variant.color.clone().unwrap_or_default();
+            
+            conn.execute(
+                "UPDATE product_variants SET variant_price = ?1, variant_barcode = COALESCE(?5, variant_barcode)
+                 WHERE product_id = ?2 AND (size = ?3 OR (size IS NULL AND ?3 = '')) AND (color = ?4 OR (color IS NULL AND ?4 = ''))",
+                params![variant.variant_price, id, size_val, color_val, variant.variant_barcode],
+            )?;
+        }
+    }
+
     Ok(())
 }
 

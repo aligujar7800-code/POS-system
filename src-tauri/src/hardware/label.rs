@@ -217,7 +217,7 @@ pub fn build_zpl_batch(items: &[LabelBatchItem], _shop_name: &str) -> String {
         let right = current_pair.1;
         let off_x = left.offset_x.unwrap_or(0);
         let lx = 30 + off_x;
-        let rx = 430 + off_x;
+        let rx = 460 + off_x;
 
         let mut label_block = format!("^XA\n^PW{}\n^LL{}\n", full_w, label_h);
         label_block.push_str(&build_one_zpl(lx, left));
@@ -300,7 +300,7 @@ pub fn build_epl2_label(data: &LabelData) -> String {
     let off_y = data.offset_y.unwrap_or(0);
 
     let lx = 10 + off_x;    // left label X origin
-    let rx = 420 + off_x;   // right label X origin
+    let rx = 450 + off_x;   // right label X origin
     let label_w: i32 = 380;      // usable width per label
 
     // Y positions for each row
@@ -507,7 +507,7 @@ pub fn build_epl2_batch(items: &[LabelBatchItem], _shop_name: &str) -> String {
         let off_x = left.offset_x.unwrap_or(0);
         let off_y = left.offset_y.unwrap_or(0);
         let lx = 10 + off_x;
-        let rx = 420 + off_x;
+        let rx = 450 + off_x;
 
         cmds.push_str("\nN\n");
         cmds.push_str("q812\n");

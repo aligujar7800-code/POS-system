@@ -189,9 +189,10 @@ pub fn update_product(
     db: State<DbState>,
     id: i64,
     payload: products::CreateProductPayload,
+    variants: Option<Vec<products::VariantPayload>>,
 ) -> Result<(), String> {
     let conn = db.lock();
-    products::update_product(&conn, id, &payload).map_err(|e| e.to_string())
+    products::update_product(&conn, id, &payload, variants).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

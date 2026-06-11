@@ -32,6 +32,8 @@ pub struct SaleItem {
     pub unit_price: f64,
     pub discount: f64,
     pub total_price: f64,
+    #[serde(default)]
+    pub returned_quantity: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -231,28 +233,51 @@ pub fn process_sales_return(conn: &mut Connection, payload: &ProcessReturnPayloa
     )?;
     let return_id = tx.last_insert_rowid();
 
-    // 2. Fetch sale info for accounting
-    let (customer_id, invoice_number): (Option<i64>, String) = tx.query_row(
-        "SELECT customer_id, invoice_number FROM sales WHERE id = ?1",
+    // 2. Fetch sale info for accounting and discount calculation
+    let (customer_id, invoice_number, subtotal, discount_amount): (Option<i64>, String, f64, f64) = tx.query_row(
+        "SELECT customer_id, invoice_number, subtotal, discount_amount FROM sales WHERE id = ?1",
+        params![payload.sale_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )?;
+
+    let (sum_gross, sum_net): (f64, f64) = tx.query_row(
+        "SELECT COALESCE(SUM(unit_price * quantity), 0), COALESCE(SUM(total_price), 0) FROM sale_items WHERE sale_id = ?1",
         params![payload.sale_id],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
+    
+    let total_item_discount = sum_gross - sum_net;
+    let bill_discount = f64::max(0.0, discount_amount - total_item_discount);
+    let discount_ratio = if sum_net > 0.0 { bill_discount / sum_net } else { 0.0 };
 
     // 3. Process each item
     for item in &payload.items {
-        let (product_id, variant_id, unit_price, _product_name): (Option<i64>, Option<i64>, f64, String) = tx.query_row(
-            "SELECT product_id, variant_id, unit_price, product_name FROM sale_items WHERE id = ?1",
+        let (product_id, variant_id, unit_price, total_price, quantity, _product_name, returned_qty): (Option<i64>, Option<i64>, f64, f64, i64, String, i64) = tx.query_row(
+            "SELECT product_id, variant_id, unit_price, total_price, quantity, product_name,
+                    COALESCE((SELECT SUM(quantity) FROM sales_return_items WHERE sale_item_id = si.id), 0) as returned_qty
+             FROM sale_items si WHERE si.id = ?1",
             params![item.sale_item_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
         )?;
 
-        let line_refund = unit_price * item.quantity as f64;
+        let available_to_return = quantity - returned_qty;
+        if item.quantity > available_to_return {
+            return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Cannot return more than available quantity. Available: {}, Requested: {}", available_to_return, item.quantity)
+            ))));
+        }
+
+
+        let net_item_unit_price = if quantity > 0 { total_price / quantity as f64 } else { unit_price };
+        let refunded_unit_price = net_item_unit_price * (1.0 - discount_ratio);
+        let line_refund = refunded_unit_price * item.quantity as f64;
         total_refund += line_refund;
 
         tx.execute(
             "INSERT INTO sales_return_items (return_id, sale_item_id, product_id, variant_id, quantity, unit_price, total_refund, is_damaged)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![return_id, item.sale_item_id, product_id, variant_id, item.quantity, unit_price, line_refund, item.is_damaged],
+            params![return_id, item.sale_item_id, product_id, variant_id, item.quantity, refunded_unit_price, line_refund, item.is_damaged],
         )?;
 
         // Update Stock if not damaged
@@ -268,11 +293,6 @@ pub fn process_sales_return(conn: &mut Connection, payload: &ProcessReturnPayloa
                 tx.execute(
                     "UPDATE product_variants SET quantity = quantity + ?1 WHERE id = ?2",
                     params![item.quantity, vid],
-                )?;
-
-                tx.execute(
-                    "UPDATE products SET total_stock = (SELECT SUM(quantity) FROM product_variants WHERE product_id = ?1) WHERE id = ?1",
-                    params![product_id],
                 )?;
 
                 tx.execute(
@@ -319,6 +339,7 @@ pub fn process_sales_return(conn: &mut Connection, payload: &ProcessReturnPayloa
 
     // Auto-post to accounting journal (Sales Return accounts)
     if let Err(e) = crate::db::auto_post::post_sales_return(conn, return_id, payload.created_by) {
+        let _ = std::fs::write("autopost_error.log", format!("Auto-post return failed (id={}): {:?}", return_id, e));
         eprintln!("Auto-post return failed (id={}): {:?}", return_id, e);
     }
 
@@ -338,9 +359,10 @@ pub fn get_sale_with_items(conn: &Connection, sale_id: i64) -> Result<(Sale, Vec
     )?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, sale_id, product_id, variant_id, product_name, barcode,
-                quantity, unit_price, discount, total_price
-         FROM sale_items WHERE sale_id = ?1",
+        "SELECT si.id, si.sale_id, si.product_id, si.variant_id, si.product_name, si.barcode,
+                si.quantity, si.unit_price, si.discount, si.total_price,
+                COALESCE((SELECT SUM(quantity) FROM sales_return_items WHERE sale_item_id = si.id), 0) as returned_qty
+         FROM sale_items si WHERE si.sale_id = ?1",
     )?;
     let items: Result<Vec<SaleItem>> = stmt
         .query_map(params![sale_id], map_sale_item)?
@@ -483,6 +505,7 @@ fn map_sale_item(row: &rusqlite::Row) -> rusqlite::Result<SaleItem> {
         unit_price: row.get(7)?,
         discount: row.get(8)?,
         total_price: row.get(9)?,
+        returned_quantity: row.get(10).unwrap_or(0),
     })
 }
 

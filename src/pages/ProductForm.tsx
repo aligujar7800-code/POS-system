@@ -207,7 +207,7 @@ export default function ProductForm() {
 
       let savedId = isEdit ? parseInt(id!) : 0;
       if (isEdit) {
-        await cmd('update_product', { id: savedId, payload });
+        await cmd('update_product', { id: savedId, payload, variants: variantPayloads });
       } else {
         const res = await cmd<any>('create_product', { payload, variants: variantPayloads });
         savedId = typeof res === 'number' ? res : res?.id || 0;
@@ -374,13 +374,13 @@ export default function ProductForm() {
                           <input type="number" value={isEdit ? c.quantity : 0} readOnly disabled className={cn("input-sm text-center font-bold bg-slate-50 cursor-not-allowed", !isEdit && "text-slate-400")} min={0} />
                         </div>
                         <div>
-                          <input value={c.barcode} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'barcode', e.target.value)} className={cn("input-sm text-xs", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="Scan..." />
+                          <input value={c.barcode} onChange={(e) => updateColorInGroup(group.id, idx, 'barcode', e.target.value)} className="input-sm text-xs" placeholder="Scan..." />
                         </div>
                         <div>
-                          <input type="number" value={c.cost_price} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'cost_price', e.target.value)} className={cn("input-sm text-right", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="0" />
+                          <input type="number" value={c.cost_price} onChange={(e) => updateColorInGroup(group.id, idx, 'cost_price', e.target.value)} className="input-sm text-right" placeholder="0" />
                         </div>
                         <div>
-                          <input type="number" value={c.sale_price} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'sale_price', e.target.value)} className={cn("input-sm text-right font-bold text-brand-600", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder="0" />
+                          <input type="number" value={c.sale_price} onChange={(e) => updateColorInGroup(group.id, idx, 'sale_price', e.target.value)} className="input-sm text-right font-bold text-brand-600" placeholder="0" />
                         </div>
                         <div className="flex justify-center">
                           {group.colors.length > 1 && !isEdit && (
