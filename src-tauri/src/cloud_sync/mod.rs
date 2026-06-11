@@ -403,13 +403,20 @@ fn read_sale_for_sync(conn: &rusqlite::Connection, sale_id: i64) -> Result<SaleS
     let net_amount = total_amount - returned_amount;
     let net_cogs = total_cogs - returned_cogs;
 
+    // Convert local time string to RFC3339 so Supabase interprets the timezone correctly
+    use chrono::TimeZone;
+    let iso_date = match chrono::NaiveDateTime::parse_from_str(&sale_date, "%Y-%m-%d %H:%M:%S") {
+        Ok(ndt) => chrono::Local.from_local_datetime(&ndt).single().map(|dt| dt.to_rfc3339()).unwrap_or(sale_date.clone()),
+        Err(_) => sale_date.clone(),
+    };
+
     Ok(SaleSyncData {
         local_id: sale_id,
         amount: net_amount,
         profit: net_amount - net_cogs,
         payment_method,
         items_count,
-        created_at: sale_date,
+        created_at: iso_date,
         customer_id,
     })
 }
