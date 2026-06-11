@@ -66,7 +66,13 @@ pub fn build_zpl_label(data: &LabelData) -> String {
 
         // Row 3: Price
         if let Some(mrp) = data.mrp {
-            s.push_str(&format!("^FO{},{}^A0N,24,24^FDMRP: {:.0}^FS\n", x, price_y, mrp));
+            let mrp_text = format!("MRP: {:.0}", mrp);
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FD{}^FS\n", x, price_y, mrp_text));
+            
+            let mrp_width = mrp_text.len() as i32 * 15;
+            let line_y_offset = data.mrp_line_offset.unwrap_or(12);
+            s.push_str(&format!("^FO{},{}^GB{},2,2^FS\n", x, price_y + line_y_offset, mrp_width));
+
             let sale_x = x + label_w / 2;
             s.push_str(&format!("^FO{},{}^A0N,24,24^FDRs. {:.0}^FS\n", sale_x, price_y, data.price));
         } else {
@@ -165,7 +171,13 @@ pub fn build_zpl_batch(items: &[LabelBatchItem], _shop_name: &str) -> String {
 
         // Row 3: Price
         if let Some(mrp) = item.mrp {
-            s.push_str(&format!("^FO{},{}^A0N,24,24^FDMRP: {:.0}^FS\n", x, price_y, mrp));
+            let mrp_text = format!("MRP: {:.0}", mrp);
+            s.push_str(&format!("^FO{},{}^A0N,24,24^FD{}^FS\n", x, price_y, mrp_text));
+            
+            let mrp_width = mrp_text.len() as i32 * 15;
+            let line_y_offset = item.mrp_line_offset.unwrap_or(12);
+            s.push_str(&format!("^FO{},{}^GB{},2,2^FS\n", x, price_y + line_y_offset, mrp_width));
+
             let sale_x = x + label_w / 2;
             s.push_str(&format!("^FO{},{}^A0N,24,24^FDRs. {:.0}^FS\n", sale_x, price_y, item.price));
         } else {
