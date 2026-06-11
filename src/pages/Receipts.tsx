@@ -925,7 +925,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
                                 ({formatCurrency(item.unit_price, currencySymbol)})
                               </span>
                             )}
-                            <span> (Sold: {item.quantity}{item.returned_quantity > 0 ? `, Returned: ${item.returned_quantity}` : ''})</span>
+                            <span> (Sold: {item.quantity}{(item.returned_quantity || 0) > 0 ? `, Returned: ${item.returned_quantity}` : ''})</span>
                           </div>
                           {item.discount > 0 && (
                             <div className="text-xs text-brand-600 mt-0.5 font-medium">

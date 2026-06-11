@@ -388,10 +388,25 @@ fn read_sale_for_sync(conn: &rusqlite::Connection, sale_id: i64) -> Result<SaleS
         )
         .unwrap_or((0, 0.0));
 
+    let (returned_amount, returned_cogs): (f64, f64) = conn
+        .query_row(
+            "SELECT COALESCE(SUM(sri.total_refund), 0),
+                    COALESCE(SUM(si.total_cogs / si.quantity * sri.quantity), 0)
+             FROM sales_return_items sri
+             JOIN sale_items si ON sri.sale_item_id = si.id
+             WHERE si.sale_id = ?1",
+            rusqlite::params![sale_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap_or((0.0, 0.0));
+
+    let net_amount = total_amount - returned_amount;
+    let net_cogs = total_cogs - returned_cogs;
+
     Ok(SaleSyncData {
         local_id: sale_id,
-        amount: total_amount,
-        profit: total_amount - total_cogs,
+        amount: net_amount,
+        profit: net_amount - net_cogs,
         payment_method,
         items_count,
         created_at: sale_date,
@@ -466,6 +481,27 @@ fn compute_daily_summary(conn: &rusqlite::Connection, date: &str) -> Result<Dail
         )
         .unwrap_or((0.0, 0.0));
 
+    let (returned_amount, returned_cogs): (f64, f64) = conn
+        .query_row(
+            "SELECT COALESCE(SUM(sr.total_refund), 0),
+                    COALESCE((
+                        SELECT SUM(si.total_cogs / si.quantity * sri.quantity)
+                        FROM sales_return_items sri
+                        JOIN sale_items si ON sri.sale_item_id = si.id
+                        JOIN sales s2 ON si.sale_id = s2.id
+                        WHERE date(s2.sale_date, 'localtime') = ?1
+                    ), 0)
+             FROM sales_returns sr
+             JOIN sales s ON sr.sale_id = s.id
+             WHERE date(s.sale_date, 'localtime') = ?1",
+            rusqlite::params![date],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap_or((0.0, 0.0));
+
+    let net_sales = total_sales - returned_amount;
+    let net_cogs = total_cogs - returned_cogs;
+
     let total_customers: i64 = conn
         .query_row(
             "SELECT COUNT(DISTINCT customer_id) FROM sales WHERE date(sale_date, 'localtime') = ?1 AND customer_id IS NOT NULL",
@@ -498,8 +534,8 @@ fn compute_daily_summary(conn: &rusqlite::Connection, date: &str) -> Result<Dail
 
     Ok(DailySummaryData {
         date: date.to_string(),
-        total_sales,
-        total_profit: total_sales - total_cogs,
+        total_sales: net_sales,
+        total_profit: net_sales - net_cogs,
         total_customers,
         top_products: serde_json::json!(top),
     })

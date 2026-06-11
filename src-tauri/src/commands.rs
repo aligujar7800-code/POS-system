@@ -400,11 +400,26 @@ pub fn search_sales(
 
 #[tauri::command]
 pub fn process_sales_return(
+    app: tauri::AppHandle,
     db: State<DbState>,
     payload: sales::ProcessReturnPayload,
 ) -> Result<(i64, String), String> {
     let mut conn = db.lock();
-    sales::process_sales_return(&mut conn, &payload).map_err(|e| e.to_string())
+    let result = sales::process_sales_return(&mut conn, &payload).map_err(|e| e.to_string())?;
+    drop(conn);
+
+    let sale_id = payload.sale_id;
+    let db_arc = db.inner().clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Ok(data_dir) = app_handle.path().app_data_dir() {
+            if let Err(e) = cloud_sync::sync_sale_background(&data_dir, &db_arc, sale_id).await {
+                eprintln!("[CloudSync] Background return sync error: {}", e);
+            }
+        }
+    });
+
+    Ok(result)
 }
 
 #[tauri::command]
