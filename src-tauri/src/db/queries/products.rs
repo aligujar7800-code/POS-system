@@ -32,6 +32,7 @@ pub struct ProductVariant {
     pub color: Option<String>,
     pub quantity: i64,
     pub variant_barcode: Option<String>,
+    pub legacy_barcode: Option<String>,
     pub variant_price: Option<f64>,
 }
 
@@ -126,7 +127,7 @@ pub fn get_product_by_id(conn: &Connection, id: i64) -> Result<Option<Product>> 
 
 pub fn get_product_variants(conn: &Connection, product_id: i64) -> Result<Vec<ProductVariant>> {
     let mut stmt = conn.prepare(
-        "SELECT id, product_id, size, color, quantity, variant_barcode, variant_price
+        "SELECT id, product_id, size, color, quantity, variant_barcode, variant_price, legacy_barcode
          FROM product_variants 
          WHERE product_id = ?1 
          ORDER BY id ASC",
@@ -141,6 +142,7 @@ pub fn get_product_variants(conn: &Connection, product_id: i64) -> Result<Vec<Pr
             quantity: row.get(4)?,
             variant_barcode: row.get::<_, Option<String>>(5)?,
             variant_price: row.get::<_, Option<f64>>(6)?,
+            legacy_barcode: row.get::<_, Option<String>>(7)?,
         })
     })?;
 

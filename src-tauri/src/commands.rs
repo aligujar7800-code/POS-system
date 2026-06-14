@@ -1146,9 +1146,21 @@ pub fn get_supplier_ledger(
 }
 
 #[tauri::command]
-pub fn record_supplier_payment(db: State<DbState>, payload: suppliers::SupplierPaymentPayload) -> Result<(), String> {
+pub fn record_supplier_payment(
+    db: State<DbState>,
+    payload: suppliers::SupplierPaymentPayload,
+) -> Result<(), String> {
     let mut conn = db.lock();
-    suppliers::record_supplier_payment(&mut conn, &payload).map_err(|e| e.to_string())
+    suppliers::record_supplier_payment(&mut *conn, &payload).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn record_supplier_discount(
+    db: State<DbState>,
+    payload: suppliers::SupplierDiscountPayload,
+) -> Result<(), String> {
+    let mut conn = db.lock();
+    suppliers::record_supplier_discount(&mut *conn, &payload).map_err(|e| e.to_string())
 }
 
 // ─── Accounting ─────────────────────────────────────────────────────────────

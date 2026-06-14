@@ -28,6 +28,11 @@ export default function SupplierLedgerPage() {
   const [payNote, setPayNote] = useState('');
   const [paying, setPaying] = useState(false);
 
+  const [showDiscount, setShowDiscount] = useState(false);
+  const [discountAmount, setDiscountAmount] = useState('');
+  const [discountNote, setDiscountNote] = useState('');
+  const [discounting, setDiscounting] = useState(false);
+
   const { data: supplier } = useQuery<Supplier>({
     queryKey: ['supplier', supplierId],
     queryFn: () => cmd('get_supplier_by_id', { id: supplierId }),
@@ -68,6 +73,31 @@ export default function SupplierLedgerPage() {
     }
   };
 
+  const handleDiscount = async () => {
+    if (!discountAmount) return;
+    setDiscounting(true);
+    try {
+      await cmd('record_supplier_discount', {
+        payload: {
+          supplier_id: supplierId,
+          amount: parseFloat(discountAmount),
+          notes: discountNote || null,
+          created_by: null,
+        }
+      });
+      toast('Discount recorded successfully!', 'success');
+      qc.invalidateQueries({ queryKey: ['supplier-ledger', supplierId] });
+      qc.invalidateQueries({ queryKey: ['supplier', supplierId] });
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      setShowDiscount(false);
+      setDiscountAmount(''); setDiscountNote('');
+    } catch (e: any) {
+      toast(e.toString(), 'error');
+    } finally {
+      setDiscounting(false);
+    }
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -83,6 +113,9 @@ export default function SupplierLedgerPage() {
         <div className="flex gap-2 no-print">
            <button onClick={() => window.print()} className="btn-secondary">
             <Printer className="w-4 h-4" /> Print Ledger
+          </button>
+          <button onClick={() => setShowDiscount(true)} className="btn-secondary text-brand-600 border-brand-200 hover:bg-brand-50">
+            Add Discount
           </button>
           <button onClick={() => setShowPay(true)} className="btn-primary">
             <DollarSign className="w-4 h-4" /> Record Payment
@@ -233,6 +266,49 @@ export default function SupplierLedgerPage() {
                   Confirm Payment
                 </button>
                 <button onClick={() => setShowPay(false)} className="btn-secondary flex-1">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Record Discount Dialog */}
+      {showDiscount && (
+        <>
+          <div className="overlay" onClick={() => setShowDiscount(false)} />
+          <div className="dialog w-96 animate-in fade-in zoom-in duration-200">
+            <h2 className="font-bold text-slate-800 text-lg mb-1">Add Discount</h2>
+            <p className="text-sm text-slate-500 mb-4">Record discount received from <strong className="text-slate-700">{supplier?.name}</strong></p>
+            
+            <div className="space-y-4">
+              <div className="bg-slate-50 p-3 rounded-lg flex justify-between items-center">
+                 <span className="text-xs font-bold text-slate-500 uppercase">Outstanding Balance</span>
+                 <span className="text-lg font-black text-red-600">{fmt(supplier?.outstanding_balance ?? 0)}</span>
+              </div>
+
+              <div>
+                <label className="label text-[10px] font-black uppercase text-slate-400">Discount Amount *</label>
+                <input
+                  type="number"
+                  value={discountAmount}
+                  onChange={(e) => setDiscountAmount(e.target.value)}
+                  className="input font-bold text-lg"
+                  autoFocus
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className="label text-[10px] font-black uppercase text-slate-400">Notes / Reference</label>
+                <input value={discountNote} onChange={(e) => setDiscountNote(e.target.value)} className="input" placeholder="e.g. Special Discount" />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={handleDiscount} disabled={discounting} className="btn-primary flex-1">
+                  {discounting ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" /> : null}
+                  Confirm Discount
+                </button>
+                <button onClick={() => setShowDiscount(false)} className="btn-secondary flex-1">Cancel</button>
               </div>
             </div>
           </div>

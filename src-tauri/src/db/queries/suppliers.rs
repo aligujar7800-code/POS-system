@@ -43,6 +43,14 @@ pub struct SupplierPaymentPayload {
     pub created_by: Option<i64>,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct SupplierDiscountPayload {
+    pub supplier_id: i64,
+    pub amount: f64,
+    pub notes: Option<String>,
+    pub created_by: Option<i64>,
+}
+
 pub fn get_all_suppliers(conn: &Connection) -> Result<Vec<Supplier>> {
     let mut stmt = conn.prepare("SELECT * FROM suppliers ORDER BY name")?;
     let rows = stmt.query_map([], |row| {
@@ -234,6 +242,49 @@ pub fn record_supplier_payment(conn: &mut Connection, payload: &SupplierPaymentP
     
     if let Err(e) = crate::db::auto_post::post_supplier_payment(conn, payload.amount, payload.supplier_id, &supplier_name, payload.created_by) {
         eprintln!("Auto-post supplier payment failed: {:?}", e);
+    }
+
+    Ok(())
+}
+
+pub fn record_supplier_discount(conn: &mut Connection, payload: &SupplierDiscountPayload) -> Result<()> {
+    let tx = conn.transaction()?;
+
+    let current_balance: f64 = tx.query_row(
+        "SELECT outstanding_balance FROM suppliers WHERE id = ?1",
+        params![payload.supplier_id],
+        |r| r.get(0),
+    )?;
+
+    let new_balance = current_balance - payload.amount;
+
+    tx.execute(
+        "INSERT INTO supplier_ledger (supplier_id, entry_type, amount, balance_after, description, created_by)
+         VALUES (?1, 'adjustment', ?2, ?3, ?4, ?5)",
+        params![
+            payload.supplier_id,
+            payload.amount,
+            new_balance,
+            payload.notes.clone().unwrap_or_else(|| "Discount Received".to_string()),
+            payload.created_by
+        ],
+    )?;
+
+    tx.execute(
+        "UPDATE suppliers SET outstanding_balance = ?1 WHERE id = ?2",
+        params![new_balance, payload.supplier_id],
+    )?;
+
+    tx.commit()?;
+
+    let supplier_name: String = conn.query_row(
+        "SELECT name FROM suppliers WHERE id = ?1",
+        params![payload.supplier_id],
+        |r| r.get(0),
+    ).unwrap_or_else(|_| format!("Supplier #{}", payload.supplier_id));
+    
+    if let Err(e) = crate::db::auto_post::post_supplier_discount(conn, payload.amount, payload.supplier_id, &supplier_name, payload.created_by) {
+        eprintln!("Auto-post supplier discount failed: {:?}", e);
     }
 
     Ok(())

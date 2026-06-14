@@ -225,13 +225,8 @@ interface SearchProduct {
 }
 
 interface ProductVariant {
-  id: number;
-  product_id: number;
-  size?: string;
-  color?: string;
-  quantity: number;
-  variant_barcode?: string;
-  variant_price?: number;
+  id: number; product_id: number; size?: string; color?: string;
+  quantity: number; variant_barcode?: string; legacy_barcode?: string; variant_price?: number;
 }
 
 // ─── Strong AI Product Search ──────────────────────────────────────────

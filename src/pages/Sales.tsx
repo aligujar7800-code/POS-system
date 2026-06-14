@@ -42,7 +42,7 @@ interface Product {
 }
 interface ProductVariant {
   id: number; product_id: number; size?: string; color?: string;
-  quantity: number; variant_barcode?: string; variant_price?: number;
+  quantity: number; variant_barcode?: string; legacy_barcode?: string; variant_price?: number;
 }
 interface Customer { id: number; name: string; phone: string; outstanding_balance: number; }
 
@@ -368,7 +368,7 @@ export default function SalesPage() {
         const variants = await cmd<ProductVariant[]>('get_product_variants', { productId: product.id });
         
         // 1. Try to find the exact variant that matches this barcode
-        let variant = variants.find(v => v.variant_barcode === barcode);
+        let variant = variants.find(v => v.variant_barcode === barcode || v.legacy_barcode === barcode);
         
         // 2. If no exact match (e.g. main product barcode was scanned), check if we need to show variant picker
         if (!variant && variants.length > 0) {

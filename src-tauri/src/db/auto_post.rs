@@ -466,3 +466,36 @@ pub fn post_supplier_opening_balance(conn: &Connection, amount: f64, supplier_id
     Ok(())
 }
 
+/// Auto-post discount received from supplier.
+pub fn post_supplier_discount(conn: &Connection, amount: f64, supplier_id: i64, supplier_name: &str, created_by: Option<i64>) -> Result<()> {
+    if amount <= 0.0 { return Ok(()); }
+
+    let payable_id = accounts::get_account_id_by_code(conn, "2001")?;
+    // We credit COGS (5001) to reduce the cost of inventory, which correctly represents a purchase discount
+    let cogs_id = accounts::get_account_id_by_code(conn, "5001")?;
+
+    let today = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let entry = accounts::CreateJournalEntry {
+        entry_date: today,
+        description: format!("Discount received from supplier {}", supplier_name),
+        reference_type: Some("supplier_discount".to_string()),
+        reference_id: Some(supplier_id),
+        lines: vec![
+            accounts::CreateJournalLine {
+                account_id: payable_id,
+                debit_amount: amount,
+                credit_amount: 0.0,
+                description: None,
+            },
+            accounts::CreateJournalLine {
+                account_id: cogs_id,
+                debit_amount: 0.0,
+                credit_amount: amount,
+                description: Some("Supplier Discount".to_string()),
+            },
+        ],
+    };
+    let _ = accounts::create_journal_entry(conn, &entry, created_by);
+    Ok(())
+}

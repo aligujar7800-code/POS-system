@@ -148,6 +148,7 @@ pub fn run() {
             update_supplier,
             get_supplier_ledger,
             record_supplier_payment,
+            record_supplier_discount,
             // Ledger
             get_financial_ledger,
             add_cashbook_entry,
