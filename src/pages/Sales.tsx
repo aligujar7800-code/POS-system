@@ -38,6 +38,7 @@ interface Product {
   sale_price: number;
   tax_percent: number;
   total_stock: number;
+  product_meta?: string;
 }
 interface ProductVariant {
   id: number; product_id: number; size?: string; color?: string;
@@ -190,6 +191,80 @@ function CartRow({ idx, item, onQty, onRemove, onDiscount, onUpdateMeta, cartFie
   );
 }
 
+function VapeSaleModal({ 
+  product, 
+  variant, 
+  onClose, 
+  onConfirm 
+}: { 
+  product: Product; 
+  variant: ProductVariant | null; 
+  onClose: () => void; 
+  onConfirm: (mode: 'bottle' | 'loose', qty: number) => void;
+}) {
+  const [mode, setMode] = useState<'bottle' | 'loose'>('bottle');
+  const [qty, setQty] = useState('1');
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-slate-800">Select Sale Mode</h2>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+              <X className="w-5 h-5 text-slate-400" />
+            </button>
+          </div>
+          
+          <p className="text-sm text-slate-600 mb-6">
+            <span className="font-bold">{product.name}</span>
+            {variant && variant.size && ` - ${variant.size}ML`}
+          </p>
+
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <button
+              onClick={() => { setMode('bottle'); setQty('1'); }}
+              className={cn("p-4 rounded-xl border-2 text-center transition-all", mode === 'bottle' ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:border-slate-300")}
+            >
+              <div className="font-bold mb-1">Full Bottle</div>
+              <div className="text-xs opacity-80">Sell sealed bottle</div>
+            </button>
+            <button
+              onClick={() => { setMode('loose'); setQty(''); }}
+              className={cn("p-4 rounded-xl border-2 text-center transition-all", mode === 'loose' ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:border-slate-300")}
+            >
+              <div className="font-bold mb-1">Loose Fill</div>
+              <div className="text-xs opacity-80">Refill customer pod</div>
+            </button>
+          </div>
+
+          <div className="mb-6">
+            <label className="label text-sm font-bold text-slate-700 mb-2">
+              {mode === 'bottle' ? 'Number of Bottles' : 'Amount Filled (ML)'}
+            </label>
+            <input 
+              type="number" 
+              value={qty} 
+              onChange={e => setQty(e.target.value)} 
+              className="input text-lg font-bold" 
+              placeholder={mode === 'bottle' ? "1" : "e.g. 35"}
+              autoFocus
+            />
+          </div>
+
+          <button 
+            onClick={() => onConfirm(mode, parseInt(qty) || 0)} 
+            disabled={!parseInt(qty) || parseInt(qty) <= 0}
+            className="btn-primary w-full py-3 text-lg"
+          >
+            Add to Cart
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Sales Page ──────────────────────────────────────────────────────────
 export default function SalesPage() {
   const { t } = useTranslation();
@@ -221,6 +296,7 @@ export default function SalesPage() {
   const [showPaymentFlow, setShowPaymentFlow] = useState<'jazzcash' | 'easypaisa' | 'hbl_pay' | 'stripe' | null>(null);
   const [pendingGatewayTxnId, setPendingGatewayTxnId] = useState<number | null>(null);
   const [globalSaleMeta, setGlobalSaleMeta] = useState<Record<string, any>>({});
+  const [vapeModal, setVapeModal] = useState<{product: Product, variant: ProductVariant | null} | null>(null);
   
   // Camera Sale Mode State
   const lastScanTimeRef = useRef(0);
@@ -366,7 +442,15 @@ export default function SalesPage() {
         setShowVariants(product);
         return;
       }
-      const variant = variants[0];
+      const variant = variants[0] || null;
+      if (activeModule.features.includes('vape_sale_mode')) {
+        let isDevice = false;
+        try { isDevice = JSON.parse(product.product_meta || '{}').vape_product_type === 'device'; } catch {}
+        if (!isDevice) {
+          setVapeModal({ product, variant });
+          return;
+        }
+      }
       cart.addItem({
         product_id: product.id,
         variant_id: variant?.id,
@@ -905,6 +989,15 @@ export default function SalesPage() {
         <VariantDialog
           product={showVariants}
           onSelect={(v) => {
+            if (activeModule.features.includes('vape_sale_mode')) {
+              let isDevice = false;
+              try { isDevice = JSON.parse(showVariants.product_meta || '{}').vape_product_type === 'device'; } catch {}
+              if (!isDevice) {
+                setVapeModal({ product: showVariants, variant: v });
+                setShowVariants(null);
+                return;
+              }
+            }
             cart.addItem({
               product_id: showVariants.id,
               variant_id: v.id,
@@ -919,6 +1012,50 @@ export default function SalesPage() {
           onClose={() => setShowVariants(null)}
         />
       )}
+
+      {/* Vape Modal */}
+      {vapeModal && (
+        <VapeSaleModal
+          product={vapeModal.product}
+          variant={vapeModal.variant}
+          onClose={() => setVapeModal(null)}
+          onConfirm={(mode, qty) => {
+            const variant = vapeModal.variant;
+            const product = vapeModal.product;
+            const nameStr = variant && (variant.size || variant.color) 
+              ? `${product.name} (${[variant.size, variant.color].filter(Boolean).join(', ')})`
+              : product.name;
+
+            if (mode === 'bottle') {
+              cart.addItem({
+                product_id: product.id,
+                variant_id: variant?.id,
+                product_name: `${nameStr} [Bottle]`,
+                barcode: variant?.variant_barcode || product.barcode,
+                quantity: qty,
+                unit_price: variant?.variant_price ?? product.sale_price,
+                discount: 0,
+                discount_type: 'amount',
+                item_meta: { sale_mode: 'bottle', bottle_ml: parseInt(variant?.size || '1') || 1 }
+              });
+            } else {
+              cart.addItem({
+                product_id: product.id,
+                variant_id: variant?.id,
+                product_name: `${nameStr} [Loose]`,
+                barcode: variant?.variant_barcode || product.barcode,
+                quantity: qty,
+                unit_price: product.sale_price, // product.sale_price is per-ml
+                discount: 0,
+                discount_type: 'amount',
+                item_meta: { sale_mode: 'loose' }
+              });
+            }
+            setVapeModal(null);
+          }}
+        />
+      )}
+
       {lastSaleId && (
         <SaleDetailsModal
           saleId={lastSaleId}

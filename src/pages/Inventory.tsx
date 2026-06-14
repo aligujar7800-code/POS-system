@@ -19,7 +19,7 @@ interface Product {
   category_name?: string; brand?: string; sale_price: number;
   cost_price: number; total_stock: number; low_stock_threshold: number;
   image_path?: string; variant_summary?: string; article_number?: string;
-  last_supplier?: string;
+  last_supplier?: string; product_meta?: string;
 }
 
 interface ProductVariant {
@@ -125,9 +125,15 @@ export default function InventoryPage() {
 
 
   function stockBadge(p: Product) {
+    let unit = '';
+    if (activeModule.features.includes('vape_sale_mode')) {
+      let isDevice = false;
+      try { isDevice = JSON.parse(p.product_meta || '{}').vape_product_type === 'device'; } catch {}
+      unit = isDevice ? 'Units' : 'ML';
+    }
     if (p.total_stock === 0) return <span className="badge-red">Out of Stock</span>;
-    if (p.total_stock <= p.low_stock_threshold) return <span className="badge-amber">Low Stock ({p.total_stock})</span>;
-    return <span className="badge-green">In Stock ({p.total_stock})</span>;
+    if (p.total_stock <= p.low_stock_threshold) return <span className="badge-amber">Low Stock ({p.total_stock}{unit ? ` ${unit}` : ''})</span>;
+    return <span className="badge-green">In Stock ({p.total_stock}{unit ? ` ${unit}` : ''})</span>;
   }
 
   return (
@@ -190,9 +196,26 @@ export default function InventoryPage() {
           </div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Stock Count</p>
-            <p className="text-xl font-black text-slate-800">
-              {products.reduce((acc, p) => acc + p.total_stock, 0)} Units
-            </p>
+            {activeModule.features.includes('vape_sale_mode') ? (() => {
+              let ml = 0;
+              let devices = 0;
+              products.forEach(p => {
+                let isDevice = false;
+                try { isDevice = JSON.parse(p.product_meta || '{}').vape_product_type === 'device'; } catch {}
+                if (isDevice) devices += p.total_stock;
+                else ml += p.total_stock;
+              });
+              return (
+                <div className="flex flex-col mt-0.5">
+                  <p className="text-lg font-black text-slate-800 leading-tight">{ml} ML</p>
+                  <p className="text-sm font-bold text-slate-500 leading-tight">{devices} Devices</p>
+                </div>
+              );
+            })() : (
+              <p className="text-xl font-black text-slate-800">
+                {products.reduce((acc, p) => acc + p.total_stock, 0)} Units
+              </p>
+            )}
           </div>
         </div>
         <div className="card p-4 border-l-4 border-l-emerald-500 shadow-sm flex items-center gap-4">
@@ -389,7 +412,14 @@ export default function InventoryPage() {
                                     <div className="flex items-center gap-2 mt-0.5">
                                       <p className="text-[10px] font-mono text-slate-400">{v.variant_barcode || 'No Barcode'}</p>
                                       <p className={`text-[10px] font-bold px-1.5 rounded ${v.quantity > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                                        {v.quantity} in stock
+                                        {v.quantity} {(() => {
+                                          if (activeModule.features.includes('vape_sale_mode')) {
+                                            let isDevice = false;
+                                            try { isDevice = JSON.parse(p.product_meta || '{}').vape_product_type === 'device'; } catch {}
+                                            return isDevice ? 'in stock' : 'ML';
+                                          }
+                                          return 'in stock';
+                                        })()}
                                       </p>
                                     </div>
                                   </div>

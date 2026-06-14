@@ -150,6 +150,16 @@ export default function InwardPage() {
       if (q > 0) {
         const v = productVariants.find((pv: any) => pv.id === parseInt(vIdStr));
         if (v) {
+          let finalQty = q;
+          if (activeModule.features.includes('vape_sale_mode')) {
+            let isDevice = false;
+            try { isDevice = JSON.parse((selectedProduct as any).product_meta || '{}').vape_product_type === 'device'; } catch {}
+            if (!isDevice) {
+              const mlSize = parseInt(v.size) || 1;
+              finalQty = q * mlSize;
+            }
+          }
+
           newItems.push({
             cart_id: Math.random().toString(36).substring(7),
             product_id: selectedProduct.id,
@@ -161,7 +171,7 @@ export default function InwardPage() {
             product_name: selectedProduct.name || '',
             color: v.color || '',
             size: v.size || '',
-            quantity: q,
+            quantity: finalQty,
             cost_price: inputs.cost_price ? parseFloat(inputs.cost_price) : (parseFloat(selectedProduct.cost_price) || 0),
             sale_price: inputs.sale_price ? parseFloat(inputs.sale_price) : (parseFloat(v.variant_price) || parseFloat(selectedProduct.sale_price) || 0),
           });
@@ -173,6 +183,16 @@ export default function InwardPage() {
     if (showAddVariant) {
       const q = parseInt(newQuantity) || 0;
       if (q > 0) {
+        let finalQty = q;
+        if (activeModule.features.includes('vape_sale_mode')) {
+          let isDevice = false;
+          try { isDevice = JSON.parse((selectedProduct as any).product_meta || '{}').vape_product_type === 'device'; } catch {}
+          if (!isDevice) {
+            const mlSize = parseInt(newSize) || 1;
+            finalQty = q * mlSize;
+          }
+        }
+
         newItems.push({
           cart_id: Math.random().toString(36).substring(7),
           product_id: selectedProduct.id,
@@ -184,7 +204,7 @@ export default function InwardPage() {
           product_name: selectedProduct.name || '',
           color: newColor.trim() || '',
           size: newSize.trim() || '',
-          quantity: q,
+          quantity: finalQty,
           cost_price: parseFloat(newCost) || parseFloat(selectedProduct.cost_price) || 0,
           sale_price: parseFloat(newSale) || parseFloat(selectedProduct.sale_price) || 0,
         });

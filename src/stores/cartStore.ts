@@ -65,7 +65,9 @@ export const useCartStore = create<CartState>()((set, get) => ({
   addItem: (newItem) => {
     set((state) => {
       const existingIdx = state.items.findIndex(
-        (i) => i.product_id === newItem.product_id && i.variant_id === newItem.variant_id
+        (i) => i.product_id === newItem.product_id && 
+               i.variant_id === newItem.variant_id &&
+               i.item_meta?.sale_mode === newItem.item_meta?.sale_mode
       );
       if (existingIdx >= 0) {
         const updated = [...state.items];

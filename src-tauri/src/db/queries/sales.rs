@@ -34,6 +34,7 @@ pub struct SaleItem {
     pub total_price: f64,
     #[serde(default)]
     pub returned_quantity: i64,
+    pub item_meta: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -133,20 +134,31 @@ pub fn create_sale(conn: &mut Connection, payload: &CreateSalePayload) -> Result
                 |r| r.get(0),
             ).unwrap_or(0);
 
-            if current_qty < item.quantity {
+            let mut stock_deduction = item.quantity;
+            if let Some(ref meta_str) = item.item_meta {
+                if let Ok(meta_json) = serde_json::from_str::<serde_json::Value>(meta_str) {
+                    if meta_json["sale_mode"] == "bottle" {
+                        if let Some(bottle_ml) = meta_json["bottle_ml"].as_i64() {
+                            stock_deduction = item.quantity * bottle_ml;
+                        }
+                    }
+                }
+            }
+
+            if current_qty < stock_deduction {
                 return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Insufficient stock for variant ID {}: Requested {}, Available {}", vid, item.quantity, current_qty)
+                    format!("Insufficient stock for variant ID {}: Requested {}, Available {}", vid, stock_deduction, current_qty)
                 ))));
             }
 
-            cogs = crate::db::queries::products::deduct_fifo_lots(&tx, vid, item.quantity).unwrap_or(0.0);
+            cogs = crate::db::queries::products::deduct_fifo_lots(&tx, vid, stock_deduction).unwrap_or(0.0);
             tx.execute(
                 "UPDATE product_variants SET quantity = quantity - ?1 WHERE id = ?2",
-                params![item.quantity, vid],
+                params![stock_deduction, vid],
             )?;
             
-            let new_qty = current_qty - item.quantity;
+            let new_qty = current_qty - stock_deduction;
 
             tx.execute(
                 "INSERT INTO stock_history (product_id, variant_id, prev_qty, new_qty, reason, changed_by)
@@ -160,11 +172,11 @@ pub fn create_sale(conn: &mut Connection, payload: &CreateSalePayload) -> Result
 
         tx.execute(
             "INSERT INTO sale_items (sale_id, product_id, variant_id, product_name,
-                barcode, quantity, unit_price, discount, total_price, total_cogs)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                barcode, quantity, unit_price, discount, total_price, total_cogs, item_meta)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
                 sale_id, item.product_id, if vid > 0 { Some(vid) } else { item.variant_id }, item.product_name,
-                item.barcode, item.quantity, item.unit_price, item.discount, item.total_price, cogs
+                item.barcode, item.quantity, item.unit_price, item.discount, item.total_price, cogs, item.item_meta
             ],
         )?;
     }
@@ -361,7 +373,8 @@ pub fn get_sale_with_items(conn: &Connection, sale_id: i64) -> Result<(Sale, Vec
     let mut stmt = conn.prepare(
         "SELECT si.id, si.sale_id, si.product_id, si.variant_id, si.product_name, si.barcode,
                 si.quantity, si.unit_price, si.discount, si.total_price,
-                COALESCE((SELECT SUM(quantity) FROM sales_return_items WHERE sale_item_id = si.id), 0) as returned_qty
+                COALESCE((SELECT SUM(quantity) FROM sales_return_items WHERE sale_item_id = si.id), 0) as returned_qty,
+                si.item_meta
          FROM sale_items si WHERE si.sale_id = ?1",
     )?;
     let items: Result<Vec<SaleItem>> = stmt
@@ -506,6 +519,7 @@ fn map_sale_item(row: &rusqlite::Row) -> rusqlite::Result<SaleItem> {
         discount: row.get(8)?,
         total_price: row.get(9)?,
         returned_quantity: row.get(10).unwrap_or(0),
+        item_meta: row.get(11)?,
     })
 }
 

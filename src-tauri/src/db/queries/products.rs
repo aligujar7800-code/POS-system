@@ -56,6 +56,7 @@ pub struct CreateProductPayload {
     pub tax_percent: f64,
     pub low_stock_threshold: Option<i64>,
     pub article_number: Option<String>,
+    pub product_meta: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -180,14 +181,15 @@ pub fn create_product(
 
     conn.execute(
         "INSERT INTO products (name, sku, barcode, category_id, brand, description,
-            cost_price, sale_price, tax_percent, low_stock_threshold, is_active, article_number)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11)",
+            cost_price, sale_price, tax_percent, low_stock_threshold, is_active, article_number, product_meta)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?12)",
         params![
             payload.name, sku, payload.barcode, payload.category_id,
             payload.brand, payload.description,
             payload.cost_price, payload.sale_price, payload.tax_percent,
             payload.low_stock_threshold.unwrap_or(5),
-            article_number
+            article_number,
+            payload.product_meta
         ],
     )?;
     let product_id = conn.last_insert_rowid();
@@ -326,13 +328,13 @@ pub fn update_product(
     conn.execute(
         "UPDATE products SET name=?1, barcode=?2, category_id=?3, brand=?4,
                  description=?5, cost_price=?6, sale_price=?7, tax_percent=?8,
-                 low_stock_threshold=?9, updated_at=datetime('now'), article_number=?11
+                 low_stock_threshold=?9, updated_at=datetime('now'), article_number=?11, product_meta=?12
          WHERE id=?10",
         params![
             payload.name, payload.barcode, payload.category_id, payload.brand,
             payload.description, payload.cost_price, payload.sale_price,
             payload.tax_percent, payload.low_stock_threshold.unwrap_or(5), id,
-            payload.article_number
+            payload.article_number, payload.product_meta
         ],
     )?;
 

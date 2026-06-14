@@ -80,7 +80,8 @@ export type FeatureFlag =
   | 'vehicle_compat'      // Vehicle compatibility (auto parts)
   | 'seasonal_bulk'       // Seasonal bulk sale mode (stationery)
   | 'tiered_pricing'      // Retailer-wise pricing (wholesale)
-  | 'monthly_hisaab';     // Customer-wise monthly account (dairy)
+  | 'monthly_hisaab'      // Customer-wise monthly account (dairy)
+  | 'vape_sale_mode';     // ML-based Loose and Packaged selling (vape)
 
 /**
  * Category seeds for initial setup of a business type.

@@ -26,6 +26,7 @@ import stationeryModule from './businesses/stationery';
 import autoPartsModule from './businesses/autoparts';
 import fruitVegModule from './businesses/fruitveg';
 import wholesaleModule from './businesses/wholesale';
+import vapeModule from './businesses/vape';
 
 // ─── Module Map ─────────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ const modules: Record<string, BusinessModule> = {
   autoparts: autoPartsModule,
   fruitveg: fruitVegModule,
   wholesale: wholesaleModule,
+  vape: vapeModule,
 };
 
 // ─── Public API ─────────────────────────────────────────────────────────────

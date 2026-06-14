@@ -50,7 +50,13 @@ export default function ProductForm() {
 
   // Module system: get active business module
   const activeModule = useBusinessStore(s => s.getActiveModule)();
-  const [productMeta, setProductMeta] = useState<Record<string, any>>({});
+  const [productMeta, setProductMeta] = useState<Record<string, any>>(() => {
+    const defaults: Record<string, any> = {};
+    activeModule.extraFields.forEach(f => {
+      if (f.defaultValue !== undefined) defaults[f.key] = f.defaultValue;
+    });
+    return defaults;
+  });
 
   // Fetch product data if editing
   const { data: productData } = useQuery({
@@ -68,18 +74,24 @@ export default function ProductForm() {
   // Populate form on edit
   useEffect(() => {
     if (isEdit && productData) {
-      setName(productData.name || '');
-      setSku(productData.sku || '');
-      setArticleNumber(productData.article_number || '');
-      setBarcode(productData.barcode || '');
-      setCategoryId(productData.category_id?.toString() || '');
-      setBrand(productData.brand || '');
-      setDesc(productData.description || '');
-      setTaxPct(productData.tax_percent?.toString() || '0');
-      setLowStock(productData.low_stock_threshold?.toString() || '5');
+      const p = productData;
+      setName(p.name || '');
+      setSku(p.sku || '');
+      setArticleNumber(p.article_number || '');
+      setBarcode(p.barcode || '');
+      setCategoryId(p.category_id?.toString() || '');
+      setBrand(p.brand || '');
+      setDesc(p.description || '');
+      setTaxPct(p.tax_percent?.toString() || '0');
+      setLowStock(p.low_stock_threshold?.toString() || '5');
       // Load module-specific metadata
-      if (productData.product_meta) {
-        try { setProductMeta(JSON.parse(productData.product_meta)); } catch { setProductMeta({}); }
+      if (p.product_meta) {
+        try {
+          const parsed = JSON.parse(p.product_meta);
+          // Merge with defaults to ensure missing fields have a value
+          const merged = { ...productMeta, ...parsed };
+          setProductMeta(merged);
+        } catch { setProductMeta(productMeta); }
       }
     }
   }, [isEdit, productData]);
@@ -181,8 +193,8 @@ export default function ProductForm() {
         article_number: articleNumber || null,
         category_id: categoryId ? parseInt(categoryId) : null,
         brand: brand || null, description: desc || null,
-        cost_price: sizeGroups[0]?.colors[0]?.cost_price ? parseFloat(sizeGroups[0].colors[0].cost_price) : 0,
-        sale_price: sizeGroups[0]?.colors[0]?.sale_price ? parseFloat(sizeGroups[0].colors[0].sale_price) : 0,
+        cost_price: activeModule.features.includes('vape_sale_mode') && productMeta.vape_product_type !== 'device' ? parseFloat(productMeta.per_ml_cost) || 0 : (sizeGroups[0]?.colors[0]?.cost_price ? parseFloat(sizeGroups[0].colors[0].cost_price) : 0),
+        sale_price: activeModule.features.includes('vape_sale_mode') && productMeta.vape_product_type !== 'device' ? parseFloat(productMeta.per_ml_sale) || 0 : (sizeGroups[0]?.colors[0]?.sale_price ? parseFloat(sizeGroups[0].colors[0].sale_price) : 0),
         tax_percent: parseFloat(taxPct) || 0,
         low_stock_threshold: parseInt(lowStock) || 5,
         product_meta: Object.keys(productMeta).length > 0 ? JSON.stringify(productMeta) : null,
@@ -302,114 +314,133 @@ export default function ProductForm() {
             </div>
           </div>
 
-          {/* Module-specific extra fields */}
-          {activeModule.extraFields.length > 0 && (
-            <div className="card p-6">
-              <div className="flex items-center gap-2 mb-4 text-purple-600">
-                <Puzzle className="w-5 h-5" />
-                <h2 className="font-bold text-lg">{activeModule.name} Details</h2>
-              </div>
-              <ModuleFields
-                fields={activeModule.extraFields}
-                values={productMeta}
-                onChange={(key, value) => setProductMeta(prev => ({ ...prev, [key]: value }))}
-                readOnly={false}
-              />
-            </div>
-          )}
+          {/* Variables for Vape logic */}
+          {(() => {
+            const isVapeDevice = activeModule.features.includes('vape_sale_mode') && productMeta.vape_product_type === 'device';
+            const extraFieldsToRender = activeModule.extraFields.filter(f => {
+              if (isVapeDevice && (f.key === 'per_ml_cost' || f.key === 'per_ml_sale')) return false;
+              return true;
+            });
+            const varLabel1 = isVapeDevice ? 'Color / Model' : (activeModule.variantLabel1 || 'Size');
+            const varLabel2 = isVapeDevice ? 'Condition' : (activeModule.variantLabel2 || 'Color');
+            const hideCostInGrid = activeModule.features.includes('vape_sale_mode') && !isVapeDevice;
+            const priceHeader = activeModule.features.includes('vape_sale_mode') && !isVapeDevice ? 'Bottle Price' : 'Price';
 
-          {/* Hierarchical Variants */}
-          <div className="card p-6 bg-slate-50/50">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="font-bold text-lg text-slate-800">{activeModule.variantLabel1 || 'Size'} & {activeModule.variantLabel2 || 'Color'} Varieties</h2>
-                <p className="text-sm text-slate-500">
-                  {isEdit ? 'Current stock levels for each variety.' : `Group your stock by ${(activeModule.variantLabel1 || 'size').toLowerCase()} and add multiple ${(activeModule.variantLabel2 || 'color').toLowerCase()}s for each.`}
-                </p>
-              </div>
-              {!isEdit && (
-                <button onClick={addSizeGroup} className="btn-secondary">
-                  <Plus className="w-4 h-4" /> Add New {activeModule.variantLabel1 || 'Size'}
-                </button>
-              )}
-            </div>
+            return (
+              <>
+                {/* Module-specific extra fields */}
+                {extraFieldsToRender.length > 0 && (
+                  <div className="card p-6">
+                    <div className="flex items-center gap-2 mb-4 text-purple-600">
+                      <Puzzle className="w-5 h-5" />
+                      <h2 className="font-bold text-lg">{activeModule.name} Details</h2>
+                    </div>
+                    <ModuleFields
+                      fields={extraFieldsToRender}
+                      values={productMeta}
+                      onChange={(key, value) => setProductMeta(prev => ({ ...prev, [key]: value }))}
+                      readOnly={false}
+                    />
+                  </div>
+                )}
 
-            <div className="space-y-6">
-              {sizeGroups.map((group) => (
-                <div key={group.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                  <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{activeModule.variantLabel1 || 'Size'}:</span>
-                      <input 
-                        value={group.size} 
-                        readOnly={isEdit}
-                        onChange={(e) => updateSizeInGroup(group.id, e.target.value)}
-                        className={cn("bg-transparent border-none focus:ring-0 font-bold text-brand-700 w-24 p-0", isEdit && "cursor-not-allowed")}
-                        placeholder={activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? 'e.g. 500g' : 'e.g. M, L, XL...'}
-                      />
+                {/* Hierarchical Variants */}
+                <div className="card p-6 bg-slate-50/50">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h2 className="font-bold text-lg text-slate-800">{varLabel1} & {varLabel2} Varieties</h2>
+                      <p className="text-sm text-slate-500">
+                        {isEdit ? 'Current stock levels for each variety.' : `Group your stock by ${varLabel1.toLowerCase()} and add multiple ${varLabel2.toLowerCase()}s for each.`}
+                      </p>
                     </div>
                     {!isEdit && (
-                      <button onClick={() => removeSizeGroup(group.id)} className="text-slate-400 hover:text-red-500 transition-colors">
-                        <Trash2 className="w-4 h-4" />
+                      <button onClick={addSizeGroup} className="btn-secondary">
+                        <Plus className="w-4 h-4" /> Add New {varLabel1}
                       </button>
                     )}
                   </div>
-                  
-                  <div className="p-4 space-y-3">
-                    <div className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter px-1">
-                      <div>{activeModule.variantLabel2 || 'Color'}</div>
-                      <div className="text-center">Qty</div>
-                      <div>Barcode</div>
-                      <div className="text-right">Cost</div>
-                      <div className="text-right">Price</div>
-                      <div />
-                    </div>
-                    
-                    {group.colors.map((c, idx) => (
-                      <div key={idx} className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-2 items-center">
-                        <div>
-                          <input value={c.color} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'color', e.target.value)} className={cn("input-sm", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder={activeModule.variantLabel2 === 'Color' || !activeModule.variantLabel2 ? 'Black, Navy...' : `${activeModule.variantLabel2}...`} />
+
+                  <div className="space-y-6">
+                    {sizeGroups.map((group) => (
+                      <div key={group.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{varLabel1}:</span>
+                            <input 
+                              value={group.size} 
+                              readOnly={isEdit}
+                              onChange={(e) => updateSizeInGroup(group.id, e.target.value)}
+                              className={cn("bg-transparent border-none focus:ring-0 font-bold text-brand-700 w-32 p-0", isEdit && "cursor-not-allowed")}
+                              placeholder={activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? 'e.g. 500g' : 'e.g. M, L, XL...'}
+                            />
+                          </div>
+                          {!isEdit && (
+                            <button onClick={() => removeSizeGroup(group.id)} className="text-slate-400 hover:text-red-500 transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
-                        <div title="Stock cannot be edited manually. Use Inward or Stock Adjustment to change quantities.">
-                          <input type="number" value={isEdit ? c.quantity : 0} readOnly disabled className={cn("input-sm text-center font-bold bg-slate-50 cursor-not-allowed", !isEdit && "text-slate-400")} min={0} />
-                        </div>
-                        <div>
-                          <input value={c.barcode} onChange={(e) => updateColorInGroup(group.id, idx, 'barcode', e.target.value)} className="input-sm text-xs" placeholder="Scan..." />
-                        </div>
-                        <div>
-                          <input type="number" value={c.cost_price} onChange={(e) => updateColorInGroup(group.id, idx, 'cost_price', e.target.value)} className="input-sm text-right" placeholder="0" />
-                        </div>
-                        <div>
-                          <input type="number" value={c.sale_price} onChange={(e) => updateColorInGroup(group.id, idx, 'sale_price', e.target.value)} className="input-sm text-right font-bold text-brand-600" placeholder="0" />
-                        </div>
-                        <div className="flex justify-center">
-                          {group.colors.length > 1 && !isEdit && (
-                            <button onClick={() => removeColorFromGroup(group.id, idx)} className="text-slate-300 hover:text-red-400">
-                              <Trash2 className="w-3.5 h-3.5" />
+                        
+                        <div className="p-4 space-y-3">
+                          <div className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter px-1">
+                            <div>{varLabel2}</div>
+                            <div className="text-center">Qty</div>
+                            <div>Barcode</div>
+                            {!hideCostInGrid && <div className="text-right">Cost</div>}
+                            <div className="text-right">{priceHeader}</div>
+                            <div />
+                          </div>
+                          
+                          {group.colors.map((c, idx) => (
+                            <div key={idx} className={cn("grid gap-2 items-center", hideCostInGrid ? "grid-cols-[2fr_1fr_2fr_1fr_30px]" : "grid-cols-[2fr_1fr_2fr_1fr_1fr_30px]")}>
+                              <div>
+                                <input value={c.color} readOnly={isEdit} onChange={(e) => updateColorInGroup(group.id, idx, 'color', e.target.value)} className={cn("input-sm", isEdit && "bg-slate-50 cursor-not-allowed")} placeholder={!activeModule.variantLabel2 ? 'Black, Navy...' : `${varLabel2}...`} />
+                              </div>
+                              <div title="Stock cannot be edited manually. Use Inward or Stock Adjustment to change quantities.">
+                                <input type="number" value={isEdit ? c.quantity : 0} readOnly disabled className={cn("input-sm text-center font-bold bg-slate-50 cursor-not-allowed", !isEdit && "text-slate-400")} min={0} />
+                              </div>
+                              <div>
+                                <input value={c.barcode} onChange={(e) => updateColorInGroup(group.id, idx, 'barcode', e.target.value)} className="input-sm text-xs" placeholder="Scan..." />
+                              </div>
+                              {!hideCostInGrid && (
+                                <div>
+                                  <input type="number" value={c.cost_price} onChange={(e) => updateColorInGroup(group.id, idx, 'cost_price', e.target.value)} className="input-sm text-right" placeholder="0" />
+                                </div>
+                              )}
+                              <div>
+                                <input type="number" value={c.sale_price} onChange={(e) => updateColorInGroup(group.id, idx, 'sale_price', e.target.value)} className="input-sm text-right font-bold text-brand-600" placeholder="0" />
+                              </div>
+                              <div className="flex justify-center">
+                                {group.colors.length > 1 && !isEdit && (
+                                  <button onClick={() => removeColorFromGroup(group.id, idx)} className="text-slate-300 hover:text-red-400">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          
+                          {!isEdit && (
+                            <button 
+                              onClick={() => addColorToGroup(group.id)}
+                              className="w-full py-2 mt-2 border border-dashed border-slate-200 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-brand-600 transition-all flex items-center justify-center gap-1"
+                            >
+                              <Plus className="w-3.5 h-3.5" /> Add Another {varLabel2}
                             </button>
                           )}
                         </div>
                       </div>
                     ))}
-                    
-                    {!isEdit && (
-                      <button 
-                        onClick={() => addColorToGroup(group.id)}
-                        className="w-full py-2 mt-2 border border-dashed border-slate-200 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-brand-600 transition-all flex items-center justify-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" /> Add Another {activeModule.variantLabel2 || 'Color'} for {group.size || `this ${(activeModule.variantLabel1 || 'size').toLowerCase()}`}
-                      </button>
-                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-            {isEdit && (
-               <p className="mt-4 text-[11px] text-slate-400 italic">
-                 Note: To adjust stock quantities or add new varieties for an existing product, please use the **Inward Stock** or **Stock Adjustment** modules.
-               </p>
-            )}
-          </div>
+              </>
+            );
+          })()}
+          {isEdit && (
+             <p className="mt-4 text-[11px] text-slate-400 italic">
+               Note: To adjust stock quantities or add new varieties for an existing product, please use the **Inward Stock** or **Stock Adjustment** modules.
+             </p>
+          )}
         </div>
 
         <div className="space-y-6">
