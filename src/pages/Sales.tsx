@@ -492,12 +492,22 @@ export default function SalesPage() {
 
   // Computed totals
   const subtotal = cart.subtotal();
-  const totalDiscount = cart.totalDiscount();
+  const totalDiscount = cart.totalDiscount() + cart.cartDiscountAmount();
   const tax = cart.taxAmount(tax_rate);
   const total = cart.grandTotal(tax_rate);
   const paid = parseFloat(paidAmount) || 0;
   const change = Math.max(0, paid - total);
   const udhaar = Math.max(0, total - paid);
+
+  // Automatically fill the "Amount Paid" field with the total amount
+  // so the cashier doesn't have to type it manually for full payments.
+  useEffect(() => {
+    if (cart.items.length > 0) {
+      setPaidAmount(total.toString());
+    } else {
+      setPaidAmount('');
+    }
+  }, [total, cart.items.length]);
 
   const handleCompleteSale = async () => {
     if (cart.items.length === 0) { toast('Cart is empty', 'error'); return; }

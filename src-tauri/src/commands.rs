@@ -591,6 +591,24 @@ pub fn dead_stock(db: State<DbState>, days: i64) -> Result<Vec<Value>, String> {
     reports::dead_stock(&conn, days).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn get_profit_by_product(db: State<DbState>, from: String, to: String) -> Result<Vec<reports::ProductPerformance>, String> {
+    let conn = db.lock();
+    reports::profit_by_product(&conn, &from, &to).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_profit_by_category(db: State<DbState>, from: String, to: String) -> Result<Vec<reports::CategoryPerformance>, String> {
+    let conn = db.lock();
+    reports::profit_by_category(&conn, &from, &to).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_profit_by_subcategory(db: State<DbState>, from: String, to: String) -> Result<Vec<reports::CategoryPerformance>, String> {
+    let conn = db.lock();
+    reports::profit_by_subcategory(&conn, &from, &to).map_err(|e| e.to_string())
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -678,6 +696,7 @@ pub fn print_sale_by_id(
     let shop_address = settings.get("shop_address").cloned().unwrap_or_default();
     let shop_phone = settings.get("shop_phone").cloned().unwrap_or_default();
     let shop_email = settings.get("shop_email").cloned().unwrap_or_default();
+    let shop_logo = settings.get("shop_logo").cloned();
     let receipt_header = settings.get("receipt_header").cloned().unwrap_or_default();
     let receipt_footer = settings.get("receipt_footer").cloned().unwrap_or_else(|| "Thank You!".to_string());
 
@@ -693,10 +712,12 @@ pub fn print_sale_by_id(
         shop_address,
         shop_phone,
         shop_email,
+        shop_logo,
         header: receipt_header,
         invoice_number: sale.invoice_number,
         sale_date: sale.sale_date,
         customer_name: sale.customer_name,
+        customer_phone: sale.customer_phone,
         cashier: "Cashier".to_string(), // In future map created_by to username
         items: receipt_items,
         subtotal: sale.subtotal,

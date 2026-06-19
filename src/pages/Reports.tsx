@@ -43,11 +43,53 @@ export default function ReportsPage() {
 
   const [tab, setTab] = useState<Tab>('sales');
   const [groupBy, setGroupBy] = useState<GroupBy>('daily');
+  const [activePreset, setActivePreset] = useState<string | null>('monthly'); // defaults to month
   const defaults = getDefaultDates();
   const [from, setFrom] = useState(defaults.from);
   const [to, setTo] = useState(defaults.to);
 
-  // Sales report data
+  const applyDatePreset = (preset: 'daily' | 'weekly' | 'monthly') => {
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const getLocalStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    
+    const today = new Date();
+    setTo(getLocalStr(today));
+    setActivePreset(preset);
+
+    if (preset === 'daily') {
+      setFrom(getLocalStr(today));
+      setGroupBy('daily');
+    } else if (preset === 'weekly') {
+      const from = new Date();
+      from.setDate(today.getDate() - today.getDay());
+      setFrom(getLocalStr(from));
+      setGroupBy('daily');
+    } else if (preset === 'monthly') {
+      const from = new Date();
+      from.setDate(1);
+      setFrom(getLocalStr(from));
+      setGroupBy('daily');
+    }
+  };
+
+  // Performance Reports
+  const { data: profitByProduct = [] } = useQuery({
+    queryKey: ['profit-by-product', from, to],
+    queryFn: () => cmd<any[]>('get_profit_by_product', { from, to }),
+    enabled: tab === 'sales',
+  });
+  const { data: profitByCategory = [] } = useQuery({
+    queryKey: ['profit-by-category', from, to],
+    queryFn: () => cmd<any[]>('get_profit_by_category', { from, to }),
+    enabled: tab === 'sales',
+  });
+  const { data: profitBySubcategory = [] } = useQuery({
+    queryKey: ['profit-by-subcategory', from, to],
+    queryFn: () => cmd<any[]>('get_profit_by_subcategory', { from, to }),
+    enabled: tab === 'sales',
+  });
+
+  // P&L report data
   const { data: salesData = [] } = useQuery({
     queryKey: ['sales-report', from, to, groupBy],
     queryFn: () => cmd<any[]>('sales_report', { from, to, groupBy }),
@@ -195,23 +237,36 @@ export default function ReportsPage() {
       {(tab === 'sales' || tab === 'pl' || tab === 'trial_balance' || tab === 'pl_statement') && (
         <div className="flex items-center gap-3 mb-5 flex-wrap">
           <div className="flex items-center gap-2">
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input-sm" />
+            <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setActivePreset(null); }} className="input-sm" />
             <span className="text-slate-400">—</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input-sm" />
+            <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setActivePreset(null); }} className="input-sm" />
           </div>
           {tab === 'sales' && (
             <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs">
-              {(['daily', 'weekly', 'monthly'] as GroupBy[]).map((g) => (
-                <button
-                  key={g}
-                  onClick={() => setGroupBy(g)}
-                  className={`px-3 py-2 font-medium capitalize ${
-                    groupBy === g ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {t(`reports.${g}`)}
-                </button>
-              ))}
+              <button
+                onClick={() => applyDatePreset('daily')}
+                className={`px-3 py-2 font-medium capitalize ${
+                  activePreset === 'daily' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => applyDatePreset('weekly')}
+                className={`px-3 py-2 font-medium capitalize ${
+                  activePreset === 'weekly' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                This Week
+              </button>
+              <button
+                onClick={() => applyDatePreset('monthly')}
+                className={`px-3 py-2 font-medium capitalize ${
+                  activePreset === 'monthly' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                This Month
+              </button>
             </div>
           )}
         </div>
@@ -319,6 +374,106 @@ export default function ReportsPage() {
               </div>
             </div>
           )}
+
+          {/* ── Detailed Performance Tables ── */}
+          <div className="space-y-6 mt-6">
+            <h2 className="text-xl font-bold text-slate-800">Detailed Performance Breakdown</h2>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="card">
+                <div className="px-5 py-4 border-b border-slate-100">
+                  <h3 className="font-semibold text-slate-700">Profit by Main Category</h3>
+                </div>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      <th className="text-right">Qty</th>
+                      <th className="text-right">Revenue</th>
+                      <th className="text-right">Profit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profitByCategory.map((p, i) => (
+                      <tr key={i}>
+                        <td className="font-medium">{p.name}</td>
+                        <td className="text-right">{p.qty_sold}</td>
+                        <td className="text-right">{fmt(p.revenue)}</td>
+                        <td className="text-right font-medium text-green-600">{fmt(p.profit)}</td>
+                      </tr>
+                    ))}
+                    {profitByCategory.length === 0 && (
+                      <tr><td colSpan={4} className="text-center text-slate-400 py-4">No data</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="card">
+                <div className="px-5 py-4 border-b border-slate-100">
+                  <h3 className="font-semibold text-slate-700">Profit by Sub-Category</h3>
+                </div>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Sub-Category</th>
+                      <th className="text-right">Qty</th>
+                      <th className="text-right">Revenue</th>
+                      <th className="text-right">Profit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profitBySubcategory.map((p, i) => (
+                      <tr key={i}>
+                        <td className="font-medium">{p.name}</td>
+                        <td className="text-right">{p.qty_sold}</td>
+                        <td className="text-right">{fmt(p.revenue)}</td>
+                        <td className="text-right font-medium text-green-600">{fmt(p.profit)}</td>
+                      </tr>
+                    ))}
+                    {profitBySubcategory.length === 0 && (
+                      <tr><td colSpan={4} className="text-center text-slate-400 py-4">No data</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 className="font-semibold text-slate-700">Profit by Product</h3>
+              </div>
+              <div className="max-h-96 overflow-y-auto">
+                <table className="table">
+                  <thead className="sticky top-0 bg-white shadow-sm z-10">
+                    <tr>
+                      <th>Product Name</th>
+                      <th>SKU</th>
+                      <th className="text-right">Qty</th>
+                      <th className="text-right">Revenue</th>
+                      <th className="text-right text-red-500">COGS</th>
+                      <th className="text-right text-green-600">Net Profit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profitByProduct.map((p, i) => (
+                      <tr key={i}>
+                        <td className="font-medium">{p.name}</td>
+                        <td className="font-mono text-xs text-slate-500">{p.sku}</td>
+                        <td className="text-right">{p.qty_sold}</td>
+                        <td className="text-right">{fmt(p.revenue)}</td>
+                        <td className="text-right text-red-500">{fmt(p.cogs)}</td>
+                        <td className="text-right font-bold text-green-600">{fmt(p.profit)}</td>
+                      </tr>
+                    ))}
+                    {profitByProduct.length === 0 && (
+                      <tr><td colSpan={6} className="text-center text-slate-400 py-4">No data</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

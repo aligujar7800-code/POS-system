@@ -644,7 +644,7 @@ pub fn send_raw_to_system_printer(printer_name: &str, data: &[u8]) -> Result<(),
     }
 
     let printer_cstr = CString::new(printer_name).map_err(|e| e.to_string())?;
-    let doc_name = CString::new("POS Label").unwrap();
+    let doc_name = CString::new("Grow Sale Print").unwrap();
     let data_type = CString::new("RAW").unwrap();
 
     unsafe {

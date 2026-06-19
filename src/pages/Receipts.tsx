@@ -16,6 +16,7 @@ interface Sale {
   invoice_number: string;
   customer_id: number | null;
   customer_name: string | null;
+  customer_phone: string | null;
   sale_date: string;
   subtotal: number;
   discount_amount: number;
@@ -563,7 +564,7 @@ export function SaleDetailsModal({
           <div style={{ marginBottom: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sale ID:</span><span style={{ fontWeight: 600 }}>{sale.invoice_number}</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Date:</span><span>{format(new Date(sale.sale_date), 'dd MMM yyyy, hh:mm a')}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer:</span><span>{sale.customer_name || 'Walk-in'}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer:</span><span>{sale.customer_name || 'Walk-in'} {sale.customer_phone ? `(${sale.customer_phone})` : ''}</span></div>
           </div>
 
           {/* Items Header */}

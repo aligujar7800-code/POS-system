@@ -32,6 +32,24 @@ pub struct HourlyData {
     pub revenue: f64,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProductPerformance {
+    pub name: String,
+    pub sku: String,
+    pub qty_sold: i64,
+    pub revenue: f64,
+    pub cogs: f64,
+    pub profit: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CategoryPerformance {
+    pub name: String,
+    pub qty_sold: i64,
+    pub revenue: f64,
+    pub profit: f64,
+}
+
 pub fn sales_report(conn: &Connection, from: &str, to: &str, group_by: &str) -> Result<Vec<SalesReportRow>> {
     let fmt = match group_by {
         "weekly" | "week" => "%Y-W%W",
@@ -181,6 +199,85 @@ pub fn dead_stock(conn: &Connection, days: i64) -> Result<Vec<serde_json::Value>
             "stock": row.get::<_, i64>(4)?,
             "last_sold": row.get::<_, Option<String>>(5)?
         }))
+    })?;
+    rows.collect()
+}
+
+pub fn profit_by_product(conn: &Connection, from: &str, to: &str) -> Result<Vec<ProductPerformance>> {
+    let mut stmt = conn.prepare(
+        "SELECT p.name,
+                COALESCE(p.sku, ''),
+                COALESCE(SUM(si.quantity), 0) as qty,
+                COALESCE(SUM(si.total_price), 0) as revenue,
+                COALESCE(SUM(si.total_cogs), 0) as cogs,
+                COALESCE(SUM(si.total_price - si.total_cogs), 0) as profit
+         FROM sale_items si
+         JOIN products p ON p.id = si.product_id
+         JOIN sales s ON s.id = si.sale_id
+         WHERE date(s.sale_date, 'localtime') BETWEEN ?1 AND ?2
+         GROUP BY p.id
+         ORDER BY profit DESC"
+    )?;
+    let rows = stmt.query_map(params![from, to], |row| {
+        Ok(ProductPerformance {
+            name: row.get(0)?,
+            sku: row.get(1)?,
+            qty_sold: row.get(2)?,
+            revenue: row.get(3)?,
+            cogs: row.get(4)?,
+            profit: row.get(5)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn profit_by_category(conn: &Connection, from: &str, to: &str) -> Result<Vec<CategoryPerformance>> {
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(pc.name, c.name) as cat_name,
+                COALESCE(SUM(si.quantity), 0) as qty,
+                COALESCE(SUM(si.total_price), 0) as revenue,
+                COALESCE(SUM(si.total_price - si.total_cogs), 0) as profit
+         FROM sale_items si
+         JOIN products p ON p.id = si.product_id
+         JOIN categories c ON c.id = p.category_id
+         LEFT JOIN categories pc ON pc.id = c.parent_id
+         JOIN sales s ON s.id = si.sale_id
+         WHERE date(s.sale_date, 'localtime') BETWEEN ?1 AND ?2
+         GROUP BY COALESCE(pc.id, c.id)
+         ORDER BY profit DESC"
+    )?;
+    let rows = stmt.query_map(params![from, to], |row| {
+        Ok(CategoryPerformance {
+            name: row.get(0)?,
+            qty_sold: row.get(1)?,
+            revenue: row.get(2)?,
+            profit: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn profit_by_subcategory(conn: &Connection, from: &str, to: &str) -> Result<Vec<CategoryPerformance>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.name as subcat_name,
+                COALESCE(SUM(si.quantity), 0) as qty,
+                COALESCE(SUM(si.total_price), 0) as revenue,
+                COALESCE(SUM(si.total_price - si.total_cogs), 0) as profit
+         FROM sale_items si
+         JOIN products p ON p.id = si.product_id
+         JOIN categories c ON c.id = p.category_id
+         JOIN sales s ON s.id = si.sale_id
+         WHERE date(s.sale_date, 'localtime') BETWEEN ?1 AND ?2
+         GROUP BY c.id
+         ORDER BY profit DESC"
+    )?;
+    let rows = stmt.query_map(params![from, to], |row| {
+        Ok(CategoryPerformance {
+            name: row.get(0)?,
+            qty_sold: row.get(1)?,
+            revenue: row.get(2)?,
+            profit: row.get(3)?,
+        })
     })?;
     rows.collect()
 }

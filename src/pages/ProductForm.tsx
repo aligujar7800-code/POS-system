@@ -35,18 +35,18 @@ export default function ProductForm() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [name, setName]         = useState('');
-  const [sku, setSku]           = useState('');
+  const [name, setName] = useState('');
+  const [sku, setSku] = useState('');
   const [articleNumber, setArticleNumber] = useState('');
-  const [barcode, setBarcode]   = useState('');
+  const [barcode, setBarcode] = useState('');
   const [mainCategory, setMainCategory] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [brand, setBrand]       = useState('');
-  const [desc, setDesc]  = useState('');
-  const [taxPct, setTaxPct]     = useState('0');
+  const [brand, setBrand] = useState('');
+  const [desc, setDesc] = useState('');
+  const [taxPct, setTaxPct] = useState('0');
   const [lowStock, setLowStock] = useState('5');
   const [sizeGroups, setSizeGroups] = useState<SizeGroup[]>([emptySizeGroup()]);
-  const [saving, setSaving]     = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Module system: get active business module
   const activeModule = useBusinessStore(s => s.getActiveModule)();
@@ -131,7 +131,7 @@ export default function ProductForm() {
   });
 
   const mainCategories = categories.filter(c => !c.parent_id);
-  const filteredSubCategories = categories.filter(c => 
+  const filteredSubCategories = categories.filter(c =>
     c.parent_id === (mainCategory ? parseInt(mainCategory) : -1)
   );
 
@@ -159,7 +159,7 @@ export default function ProductForm() {
 
   const addSizeGroup = () => setSizeGroups(prev => [...prev, emptySizeGroup()]);
   const removeSizeGroup = (id: string) => setSizeGroups(prev => prev.filter(g => g.id !== id));
-  
+
   const addColorToGroup = (groupId: string) => {
     setSizeGroups(prev => prev.map(g => g.id === groupId ? { ...g, colors: [...g.colors, emptyColor()] } : g));
   };
@@ -266,25 +266,25 @@ export default function ProductForm() {
           {/* Main Info */}
           <div className="card p-6">
             <div className="flex items-center gap-2 mb-4 text-brand-600">
-               <Package className="w-5 h-5" />
-               <h2 className="font-bold text-lg">Product Details</h2>
+              <Package className="w-5 h-5" />
+              <h2 className="font-bold text-lg">Product Details</h2>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="label text-xs font-bold text-slate-500 uppercase">Product Name *</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} className="input text-lg font-medium" placeholder="e.g. Cotton Polo Shirt" autoFocus />
               </div>
-              
+
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="label text-xs font-bold text-slate-500 uppercase">Article No *</label>
                   <div className="relative flex items-center">
-                    <input 
-                      value={articleNumber} 
-                      onChange={(e) => setArticleNumber(e.target.value)} 
-                      className="input font-mono text-sm text-brand-600 font-bold pr-10" 
-                      placeholder="e.g. ART-00001" 
+                    <input
+                      value={articleNumber}
+                      onChange={(e) => setArticleNumber(e.target.value)}
+                      className="input font-mono text-sm text-brand-600 font-bold pr-10"
+                      placeholder="e.g. ART-00001"
                     />
                     <button
                       onClick={() => {
@@ -366,8 +366,8 @@ export default function ProductForm() {
                         <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{varLabel1}:</span>
-                            <input 
-                              value={group.size} 
+                            <input
+                              value={group.size}
                               readOnly={isEdit}
                               onChange={(e) => updateSizeInGroup(group.id, e.target.value)}
                               className={cn("bg-transparent border-none focus:ring-0 font-bold text-brand-700 w-32 p-0", isEdit && "cursor-not-allowed")}
@@ -380,7 +380,7 @@ export default function ProductForm() {
                             </button>
                           )}
                         </div>
-                        
+
                         <div className="p-4 space-y-3">
                           <div className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_30px] gap-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter px-1">
                             <div>{varLabel2}</div>
@@ -390,7 +390,7 @@ export default function ProductForm() {
                             <div className="text-right">{priceHeader}</div>
                             <div />
                           </div>
-                          
+
                           {group.colors.map((c, idx) => (
                             <div key={idx} className={cn("grid gap-2 items-center", hideCostInGrid ? "grid-cols-[2fr_1fr_2fr_1fr_30px]" : "grid-cols-[2fr_1fr_2fr_1fr_1fr_30px]")}>
                               <div>
@@ -419,9 +419,9 @@ export default function ProductForm() {
                               </div>
                             </div>
                           ))}
-                          
+
                           {!isEdit && (
-                            <button 
+                            <button
                               onClick={() => addColorToGroup(group.id)}
                               className="w-full py-2 mt-2 border border-dashed border-slate-200 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-brand-600 transition-all flex items-center justify-center gap-1"
                             >
@@ -437,9 +437,9 @@ export default function ProductForm() {
             );
           })()}
           {isEdit && (
-             <p className="mt-4 text-[11px] text-slate-400 italic">
-               Note: To adjust stock quantities or add new varieties for an existing product, please use the **Inward Stock** or **Stock Adjustment** modules.
-             </p>
+            <p className="mt-4 text-[11px] text-slate-400 italic">
+              Note: To adjust stock quantities or add new varieties for an existing product, please use the **Inward Stock** or **Stock Adjustment** modules.
+            </p>
           )}
         </div>
 
@@ -459,21 +459,20 @@ export default function ProductForm() {
                         setMainCategory(m.id.toString());
                         setCategoryId(''); // Reset sub-category when main changes
                       }}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${
-                        mainCategory === m.id.toString() ? 'bg-brand-600 text-white border-brand-600 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
-                      }`}
+                      className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${mainCategory === m.id.toString() ? 'bg-brand-600 text-white border-brand-600 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
+                        }`}
                     >
                       {m.name}
                     </button>
                   ))}
                 </div>
               </div>
-              
+
               <div>
                 <label className="label text-xs font-bold text-slate-500 uppercase">Sub-Category</label>
-                <select 
-                  value={categoryId} 
-                  onChange={(e) => setCategoryId(e.target.value)} 
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
                   className="input"
                   disabled={!mainCategory}
                 >

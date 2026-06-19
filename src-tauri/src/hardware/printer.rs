@@ -16,10 +16,12 @@ pub struct ReceiptData {
     pub shop_address: String,
     pub shop_phone: String,
     pub shop_email: String,
+    pub shop_logo: Option<String>,
     pub header: String,
     pub invoice_number: String,
     pub sale_date: String,
     pub customer_name: Option<String>,
+    pub customer_phone: Option<String>,
     pub cashier: String,
     pub items: Vec<ReceiptItem>,
     pub subtotal: f64,
@@ -117,6 +119,15 @@ pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
     // ── Initialize ───────────────────────────────────────────────────────────
     buf.extend_from_slice(b"\x1b\x40"); // ESC @ – reset
 
+    // ── Shop Logo (raster bit image) ────────────────────────────────────────
+    if let Some(logo_base64) = &data.shop_logo {
+        if !logo_base64.is_empty() {
+            if let Some(raster_bytes) = build_raster_image(logo_base64) {
+                buf.extend_from_slice(&raster_bytes);
+            }
+        }
+    }
+
     // ── Shop Header (centered, double-size name) ────────────────────────────
     buf.extend_from_slice(b"\x1b\x61\x01"); // Center align
     buf.extend_from_slice(b"\x1b\x21\x30"); // Double height + width
@@ -156,7 +167,13 @@ pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
     buf.push(b'\n');
     if let Some(ref name) = data.customer_name {
         if !name.is_empty() {
-            buf.extend_from_slice(format_two_col("Customer:", name, w).as_bytes());
+            let mut cust_info = name.clone();
+            if let Some(ref phone) = data.customer_phone {
+                if !phone.is_empty() {
+                    cust_info.push_str(&format!(" ({})", phone));
+                }
+            }
+            buf.extend_from_slice(format_two_col("Customer:", &cust_info, w).as_bytes());
             buf.push(b'\n');
         }
     }
@@ -289,12 +306,18 @@ pub fn build_receipt_bytes(data: &ReceiptData) -> Vec<u8> {
     // HRI font A: GS f n
     buf.extend_from_slice(b"\x1d\x66\x00");
     // Print CODE128: GS k m n d1..dn
-    let barcode_data = data.invoice_number.as_bytes();
+    let invoice_bytes = data.invoice_number.as_bytes();
+    
+    // For CODE128 in ESC/POS, we MUST specify the character set (e.g. '{B' for Code B)
+    let mut barcode_data = Vec::new();
+    barcode_data.extend_from_slice(b"{B");
+    barcode_data.extend_from_slice(invoice_bytes);
+    
     let barcode_len = barcode_data.len().min(255) as u8;
     buf.extend_from_slice(b"\x1d\x6b\x49"); // GS k 73 (CODE128)
     buf.push(barcode_len);
     buf.extend_from_slice(&barcode_data[..barcode_len as usize]);
-    buf.push(0x00); // NUL terminator
+    // NO Nul terminator needed for m=73
     buf.push(b'\n');
     buf.push(b'\n');
 
@@ -345,4 +368,63 @@ pub fn open_cash_drawer(config: &PrinterConfig) -> Result<(), String> {
 
 fn clean_str(s: &str) -> String {
     s.trim_matches('"').trim().to_string()
+}
+
+fn build_raster_image(base64_str: &str) -> Option<Vec<u8>> {
+    let b64 = if let Some(idx) = base64_str.find("base64,") {
+        &base64_str[idx + 7..]
+    } else {
+        base64_str
+    };
+
+    use base64::{Engine as _, engine::general_purpose};
+    let bytes = general_purpose::STANDARD.decode(b64.trim()).ok()?;
+
+    let img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    
+    let mut bg = image::RgbaImage::from_pixel(img.width(), img.height(), image::Rgba([255, 255, 255, 255]));
+    image::imageops::overlay(&mut bg, &img, 0, 0);
+
+    let luma_img = image::DynamicImage::ImageRgba8(bg).into_luma8();
+    
+    let (mut width, mut height) = luma_img.dimensions();
+    let final_img = if width > 250 {
+        let ratio = 250.0 / width as f32;
+        let new_height = (height as f32 * ratio) as u32;
+        image::imageops::resize(&luma_img, 250, new_height, image::imageops::FilterType::CatmullRom)
+    } else {
+        luma_img
+    };
+    
+    let (width, height) = final_img.dimensions();
+    let bytes_per_row = ((width + 7) / 8) as u16;
+
+    let mut raster_data = Vec::with_capacity((bytes_per_row as usize) * (height as usize));
+    
+    for y in 0..height {
+        for byte_idx in 0..bytes_per_row {
+            let mut byte = 0u8;
+            for bit in 0..8 {
+                let x = (byte_idx as u32) * 8 + bit;
+                if x < width {
+                    let pixel = final_img.get_pixel(x, y)[0];
+                    if pixel < 128 { // darker than 50% gray
+                        byte |= 1 << (7 - bit);
+                    }
+                }
+            }
+            raster_data.push(byte);
+        }
+    }
+
+    let mut buf = Vec::new();
+    buf.extend_from_slice(b"\x1b\x61\x01"); 
+    buf.extend_from_slice(b"\x1D\x76\x30\x00");
+    buf.push((bytes_per_row & 0xFF) as u8);
+    buf.push((bytes_per_row >> 8) as u8);
+    buf.push((height & 0xFF) as u8);
+    buf.push((height >> 8) as u8);
+    buf.extend_from_slice(&raster_data);
+    buf.push(b'\n');
+    Some(buf)
 }

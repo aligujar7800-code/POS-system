@@ -18,6 +18,7 @@ const SalesPage      = lazy(() => import('./pages/Sales'));
 const ReceiptsPage   = lazy(() => import('./pages/Receipts'));
 const InwardPage     = lazy(() => import('./pages/Inward'));
 const LedgerPage     = lazy(() => import('./pages/Ledger'));
+const CustomersPage  = lazy(() => import('./pages/Customers'));
 const CustomerLedger = lazy(() => import('./pages/CustomerLedger'));
 const CashFlowPage   = lazy(() => import('./pages/CashFlow'));
 const InventoryPage  = lazy(() => import('./pages/Inventory'));
@@ -188,6 +189,7 @@ export default function App() {
             <Route path="/receipts"   element={<ProtectedRoute permission="sales"><ReceiptsPage /></ProtectedRoute>} />
             <Route path="/inward"     element={<ProtectedRoute permission="inventory"><InwardPage /></ProtectedRoute>} />
             <Route path="/ledger/:id" element={<ProtectedRoute permission="customers"><CustomerLedger /></ProtectedRoute>} />
+            <Route path="/customers" element={<ProtectedRoute permission="accounts"><CustomersPage /></ProtectedRoute>} />
             <Route path="/suppliers" element={<ProtectedRoute permission="suppliers"><SuppliersPage /></ProtectedRoute>} />
             <Route path="/suppliers/:id" element={<ProtectedRoute permission="suppliers"><SupplierLedgerPage /></ProtectedRoute>} />
             <Route path="/cash-flow" element={<ProtectedRoute permission="accounts"><CashFlowPage /></ProtectedRoute>} />

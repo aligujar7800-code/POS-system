@@ -163,6 +163,9 @@ pub fn run() {
             profit_loss,
             inventory_valuation,
             dead_stock,
+            get_profit_by_product,
+            get_profit_by_category,
+            get_profit_by_subcategory,
             // Settings
             get_all_settings,
             set_setting,

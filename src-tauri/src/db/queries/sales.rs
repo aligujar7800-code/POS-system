@@ -7,6 +7,7 @@ pub struct Sale {
     pub invoice_number: String,
     pub customer_id: Option<i64>,
     pub customer_name: Option<String>,
+    pub customer_phone: Option<String>,
     pub sale_date: String,
     pub subtotal: f64,
     pub discount_amount: f64,
@@ -360,7 +361,7 @@ pub fn process_sales_return(conn: &mut Connection, payload: &ProcessReturnPayloa
 
 pub fn get_sale_with_items(conn: &Connection, sale_id: i64) -> Result<(Sale, Vec<SaleItem>)> {
     let sale = conn.query_row(
-        "SELECT s.id, s.invoice_number, s.customer_id, c.name, s.sale_date,
+        "SELECT s.id, s.invoice_number, s.customer_id, c.name, c.phone, s.sale_date,
                 s.subtotal, s.discount_amount, s.discount_percent, s.tax_amount,
                 s.total_amount, s.paid_amount, s.change_amount, s.payment_method,
                 s.status, s.notes
@@ -386,7 +387,7 @@ pub fn get_sale_with_items(conn: &Connection, sale_id: i64) -> Result<(Sale, Vec
 
 pub fn get_sales_by_date(conn: &Connection, from: &str, to: &str) -> Result<Vec<Sale>> {
     let mut stmt = conn.prepare(
-        "SELECT s.id, s.invoice_number, s.customer_id, c.name, s.sale_date,
+        "SELECT s.id, s.invoice_number, s.customer_id, c.name, c.phone, s.sale_date,
                 s.subtotal, s.discount_amount, s.discount_percent, s.tax_amount,
                 s.total_amount, s.paid_amount, s.change_amount, s.payment_method,
                 s.status, s.notes
@@ -399,7 +400,7 @@ pub fn get_sales_by_date(conn: &Connection, from: &str, to: &str) -> Result<Vec<
 }
 
 pub fn search_sales(conn: &Connection, query: Option<&str>, from: Option<&str>, to: Option<&str>) -> Result<Vec<Sale>> {
-    let mut sql = "SELECT s.id, s.invoice_number, s.customer_id, c.name, s.sale_date,
+    let mut sql = "SELECT s.id, s.invoice_number, s.customer_id, c.name, c.phone, s.sale_date,
                           s.subtotal, s.discount_amount, s.discount_percent, s.tax_amount,
                           s.total_amount, s.paid_amount, s.change_amount, s.payment_method,
                           s.status, s.notes
@@ -492,17 +493,18 @@ fn map_sale(row: &rusqlite::Row) -> rusqlite::Result<Sale> {
         invoice_number: row.get(1)?,
         customer_id: row.get(2)?,
         customer_name: row.get(3)?,
-        sale_date: row.get(4)?,
-        subtotal: row.get(5)?,
-        discount_amount: row.get(6)?,
-        discount_percent: row.get(7)?,
-        tax_amount: row.get(8)?,
-        total_amount: row.get(9)?,
-        paid_amount: row.get(10)?,
-        change_amount: row.get(11)?,
-        payment_method: row.get(12)?,
-        status: row.get(13)?,
-        notes: row.get(14)?,
+        customer_phone: row.get(4)?,
+        sale_date: row.get(5)?,
+        subtotal: row.get(6)?,
+        discount_amount: row.get(7)?,
+        discount_percent: row.get(8)?,
+        tax_amount: row.get(9)?,
+        total_amount: row.get(10)?,
+        paid_amount: row.get(11)?,
+        change_amount: row.get(12)?,
+        payment_method: row.get(13)?,
+        status: row.get(14)?,
+        notes: row.get(15)?,
     })
 }
 

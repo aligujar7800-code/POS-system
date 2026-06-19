@@ -47,6 +47,7 @@ export default function Sidebar() {
     { to: '/stock-ledger', icon: <ClipboardList className="w-5 h-5" />, label: 'Stock Ledger', permission: 'inventory' },
     { to: '/accounts/general-ledger', icon: <Globe className="w-5 h-5" />, label: 'General Ledger', permission: 'accounts' },
     { to: '/accounts', icon: <BookOpen className="w-5 h-5" />, label: 'Chart of Accounts', permission: 'accounts' },
+    { to: '/customers', icon: <Users className="w-5 h-5" />, label: 'Customers Directory', permission: 'accounts' },
     { to: '/reports',   icon: <BarChart3 className="w-5 h-5" />, label: t('nav.reports'), permission: 'reports' },
     { to: '/settings',  icon: <Settings className="w-5 h-5" />, label: t('nav.settings'), permission: 'settings' },
     { to: '/logout',    icon: <LogOut className="w-5 h-5" />, label: "Logout", permission: '' },
