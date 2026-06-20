@@ -403,12 +403,9 @@ fn read_sale_for_sync(conn: &rusqlite::Connection, sale_id: i64) -> Result<SaleS
     let net_amount = total_amount - returned_amount;
     let net_cogs = total_cogs - returned_cogs;
 
-    // Convert local time string to RFC3339 so Supabase interprets the timezone correctly
-    use chrono::TimeZone;
-    let iso_date = match chrono::NaiveDateTime::parse_from_str(&sale_date, "%Y-%m-%d %H:%M:%S") {
-        Ok(ndt) => chrono::Local.from_local_datetime(&ndt).single().map(|dt| dt.to_rfc3339()).unwrap_or(sale_date.clone()),
-        Err(_) => sale_date.clone(),
-    };
+    // SQLite datetime('now') is in UTC format: YYYY-MM-DD HH:MM:SS
+    // Replace space with T and append Z to make it a valid RFC3339 UTC string
+    let iso_date = format!("{}Z", sale_date.replace(" ", "T"));
 
     Ok(SaleSyncData {
         local_id: sale_id,
@@ -517,13 +514,27 @@ fn compute_daily_summary(conn: &rusqlite::Connection, date: &str) -> Result<Dail
         )
         .unwrap_or(0);
 
-    // Top 5 products
+    // Top 5 products (accounting for returns related to sales made on this date)
     let mut stmt = conn
         .prepare(
-            "SELECT si.product_name, SUM(si.quantity) as qty, SUM(si.total_price) as revenue
-             FROM sale_items si JOIN sales s ON si.sale_id = s.id
-             WHERE date(s.sale_date, 'localtime') = ?1
-             GROUP BY si.product_name ORDER BY qty DESC LIMIT 5",
+            "SELECT product_name, SUM(qty) as qty, SUM(rev) as revenue
+             FROM (
+                 SELECT si.product_name, si.quantity as qty, si.total_price as rev
+                 FROM sale_items si JOIN sales s ON si.sale_id = s.id
+                 WHERE date(s.sale_date, 'localtime') = ?1
+
+                 UNION ALL
+
+                 SELECT si.product_name, -sri.quantity as qty, -sri.total_refund as rev
+                 FROM sales_return_items sri
+                 JOIN sales_returns sr ON sr.id = sri.return_id
+                 JOIN sales s ON s.id = sr.sale_id
+                 JOIN sale_items si ON si.id = sri.sale_item_id
+                 WHERE date(s.sale_date, 'localtime') = ?1
+             )
+             GROUP BY product_name
+             HAVING qty > 0
+             ORDER BY qty DESC LIMIT 5",
         )
         .map_err(|e| e.to_string())?;
 
