@@ -575,6 +575,11 @@ export default function SalesPage() {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['total-udhaar'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-report'] });
+      queryClient.invalidateQueries({ queryKey: ['pl'] });
+      queryClient.invalidateQueries({ queryKey: ['pl-statement'] });
+      queryClient.invalidateQueries({ queryKey: ['top-products'] });
+      queryClient.invalidateQueries({ queryKey: ['profit-by-product'] });
 
       // Shopify: Create order in background (non-blocking)
       isShopifyConfigured().then(configured => {
@@ -1197,6 +1202,11 @@ export default function SalesPage() {
               queryClient.invalidateQueries({ queryKey: ['low-stock'] });
               queryClient.invalidateQueries({ queryKey: ['dashboard'] });
               queryClient.invalidateQueries({ queryKey: ['financial-ledger'] });
+              queryClient.invalidateQueries({ queryKey: ['sales-report'] });
+              queryClient.invalidateQueries({ queryKey: ['pl'] });
+              queryClient.invalidateQueries({ queryKey: ['pl-statement'] });
+              queryClient.invalidateQueries({ queryKey: ['top-products'] });
+              queryClient.invalidateQueries({ queryKey: ['profit-by-product'] });
 
 
               cart.clearCart();

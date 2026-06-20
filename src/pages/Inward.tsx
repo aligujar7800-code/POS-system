@@ -61,7 +61,7 @@ export default function InwardPage() {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
   // We temporarily hold variant inputs here maps variant_id to { quantity, cost_price, sale_price }
-  const [variantInputs, setVariantInputs] = useState<Record<number, { quantity: string, cost_price: string, sale_price: string }>>({});
+  const [variantInputs, setVariantInputs] = useState<Record<number, { quantity: string, cost_price: string, sale_price: string, margin?: string }>>({});
 
   // Adding new variant on the fly
   const [showAddVariant, setShowAddVariant] = useState(false);
@@ -70,11 +70,26 @@ export default function InwardPage() {
   const [newQuantity, setNewQuantity] = useState('');
   const [newCost, setNewCost] = useState('');
   const [newSale, setNewSale] = useState('');
+  const [newMargin, setNewMargin] = useState('');
 
   // Bulk Edit
   const [bulkCost, setBulkCost] = useState('');
   const [bulkSale, setBulkSale] = useState('');
+  const [bulkMargin, setBulkMargin] = useState('');
   const [bulkQty, setBulkQty] = useState('');
+
+  const calcSaleFromMargin = (cost: string, margin: string) => {
+    const c = parseFloat(cost) || 0;
+    const m = parseFloat(margin) || 0;
+    if (c === 0) return '';
+    return (c + (c * m / 100)).toFixed(2);
+  };
+  const calcMarginFromSale = (cost: string, sale: string) => {
+    const c = parseFloat(cost) || 0;
+    const s = parseFloat(sale) || 0;
+    if (c === 0) return '';
+    return (((s - c) / c) * 100).toFixed(2);
+  };
 
   const applyBulkEdit = () => {
     if (!bulkCost && !bulkSale && !bulkQty) return;
@@ -85,6 +100,7 @@ export default function InwardPage() {
           ...next[v.id],
           ...(bulkCost && { cost_price: bulkCost }),
           ...(bulkSale && { sale_price: bulkSale }),
+          ...(bulkMargin && { margin: bulkMargin }),
           ...(bulkQty && { quantity: bulkQty }),
         };
       });
@@ -94,9 +110,10 @@ export default function InwardPage() {
     // Also apply to the "New Variation" fields if they are being used
     if (bulkCost) setNewCost(bulkCost);
     if (bulkSale) setNewSale(bulkSale);
+    if (bulkMargin) setNewMargin(bulkMargin);
     if (bulkQty) setNewQuantity(bulkQty);
 
-    setBulkCost(''); setBulkSale(''); setBulkQty('');
+    setBulkCost(''); setBulkSale(''); setBulkMargin(''); setBulkQty('');
   };
 
   // ── Cart & Voucher ──────────────────────────────────────
@@ -209,7 +226,7 @@ export default function InwardPage() {
           sale_price: parseFloat(newSale) || parseFloat(selectedProduct.sale_price) || 0,
         });
         added++;
-        setNewColor(''); setNewSize(''); setNewQuantity(''); setNewCost(''); setNewSale('');
+        setNewColor(''); setNewSize(''); setNewQuantity(''); setNewCost(''); setNewSale(''); setNewMargin('');
         setShowAddVariant(false);
       }
     }
@@ -414,40 +431,78 @@ export default function InwardPage() {
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#6366f1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       ⚡ Bulk Fill (Apply to all variants below)
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', gap: 8 }}>
-                      <input type="number" placeholder="Cost Price" value={bulkCost} onChange={e => setBulkCost(e.target.value)} style={{ padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }} />
-                      <input type="number" placeholder="Sale Price" value={bulkSale} onChange={e => setBulkSale(e.target.value)} style={{ padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }} />
-                      <input type="number" placeholder="Qty" value={bulkQty} onChange={e => setBulkQty(e.target.value)} style={{ padding: '8px', borderRadius: 6, border: '2px solid #cbd5e1', fontSize: 13, fontWeight: 'bold' }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 80px', gap: 8 }}>
+                      <input type="number" placeholder="Cost Price" value={bulkCost} onChange={e => {
+                        const c = e.target.value; setBulkCost(c);
+                        if (bulkMargin) setBulkSale(calcSaleFromMargin(c, bulkMargin));
+                        else if (bulkSale) setBulkMargin(calcMarginFromSale(c, bulkSale));
+                      }} style={{ padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, minWidth: 0, width: '100%' }} />
+                      <input type="number" placeholder="Margin %" value={bulkMargin} onChange={e => {
+                        const m = e.target.value; setBulkMargin(m);
+                        if (bulkCost) setBulkSale(calcSaleFromMargin(bulkCost, m));
+                      }} style={{ padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, minWidth: 0, width: '100%' }} />
+                      <input type="number" placeholder="Sale Price" value={bulkSale} onChange={e => {
+                        const s = e.target.value; setBulkSale(s);
+                        if (bulkCost) setBulkMargin(calcMarginFromSale(bulkCost, s));
+                      }} style={{ padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, minWidth: 0, width: '100%' }} />
+                      <input type="number" placeholder="Qty" value={bulkQty} onChange={e => setBulkQty(e.target.value)} style={{ padding: '8px', borderRadius: 6, border: '2px solid #cbd5e1', fontSize: 13, fontWeight: 'bold', minWidth: 0, width: '100%' }} />
                       <button onClick={applyBulkEdit} style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Apply All</button>
                     </div>
                   </div>
                 )}
 
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 100px 80px', gap: 8, fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8, padding: '0 4px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 100px 80px', gap: 8, fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8, padding: '0 4px' }}>
                     <div>{activeModule.variantLabel1 || 'Size'}</div>
                     <div>{activeModule.variantLabel2 || 'Color'}</div>
                     <div>Cost Price</div>
+                    <div>Margin%</div>
                     <div>Sale Price</div>
                     <div style={{ textAlign: 'center' }}>Receive Qty</div>
                   </div>
 
                   {variantsLoading ? <div style={{ textAlign: 'center', color: '#94a3b8', padding: 12 }}>Loading variants...</div> : productVariants.map((v: any) => (
-                    <div key={v.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 100px 80px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <div key={v.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 100px 80px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                       <div style={{ padding: '6px 10px', background: '#f8fafc', borderRadius: 6, fontSize: 13, fontWeight: 600 }}>{v.size || 'Default'}</div>
                       <div style={{ padding: '6px 10px', background: '#f8fafc', borderRadius: 6, fontSize: 13, fontWeight: 600 }}>{v.color || 'None'}</div>
                       <input
                         type="number"
                         value={variantInputs[v.id]?.cost_price || ''}
-                        onChange={(e) => setVariantInputs(prev => ({ ...prev, [v.id]: { ...prev[v.id], cost_price: e.target.value } }))}
-                        style={{ padding: '6px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}
+                        onChange={(e) => {
+                          const c = e.target.value;
+                          const m = variantInputs[v.id]?.margin || '';
+                          const s = variantInputs[v.id]?.sale_price || '';
+                          let nextSale = s;
+                          let nextMargin = m;
+                          if (m) nextSale = calcSaleFromMargin(c, m);
+                          else if (s) nextMargin = calcMarginFromSale(c, s);
+                          setVariantInputs(prev => ({ ...prev, [v.id]: { ...prev[v.id], cost_price: c, margin: nextMargin, sale_price: nextSale } }));
+                        }}
+                        style={{ padding: '6px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, minWidth: 0, width: '100%' }}
                         placeholder={String(selectedProduct.cost_price || 'Cost')}
                       />
                       <input
                         type="number"
+                        value={variantInputs[v.id]?.margin || ''}
+                        onChange={(e) => {
+                          const m = e.target.value;
+                          const c = variantInputs[v.id]?.cost_price || String(selectedProduct.cost_price || 0);
+                          const nextSale = calcSaleFromMargin(c, m);
+                          setVariantInputs(prev => ({ ...prev, [v.id]: { ...prev[v.id], margin: m, sale_price: nextSale } }));
+                        }}
+                        style={{ padding: '6px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, minWidth: 0, width: '100%' }}
+                        placeholder="%"
+                      />
+                      <input
+                        type="number"
                         value={variantInputs[v.id]?.sale_price || ''}
-                        onChange={(e) => setVariantInputs(prev => ({ ...prev, [v.id]: { ...prev[v.id], sale_price: e.target.value } }))}
-                        style={{ padding: '6px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}
+                        onChange={(e) => {
+                          const s = e.target.value;
+                          const c = variantInputs[v.id]?.cost_price || String(selectedProduct.cost_price || 0);
+                          const nextMargin = calcMarginFromSale(c, s);
+                          setVariantInputs(prev => ({ ...prev, [v.id]: { ...prev[v.id], sale_price: s, margin: nextMargin } }));
+                        }}
+                        style={{ padding: '6px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, minWidth: 0, width: '100%' }}
                         placeholder={String(v.variant_price || selectedProduct.sale_price || 'Sale')}
                       />
                       <input
@@ -455,7 +510,7 @@ export default function InwardPage() {
                         min="0"
                         value={variantInputs[v.id]?.quantity || ''}
                         onChange={(e) => setVariantInputs(prev => ({ ...prev, [v.id]: { ...prev[v.id], quantity: e.target.value } }))}
-                        style={{ padding: '6px', borderRadius: 6, border: '2px solid #cbd5e1', fontSize: 14, fontWeight: 700, textAlign: 'center', outlineColor: '#6366f1' }}
+                        style={{ padding: '6px', borderRadius: 6, border: '2px solid #cbd5e1', fontSize: 14, fontWeight: 700, textAlign: 'center', outlineColor: '#6366f1', minWidth: 0, width: '100%' }}
                         placeholder="0"
                       />
                     </div>
@@ -470,12 +525,23 @@ export default function InwardPage() {
                   {showAddVariant && (
                     <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', border: '1px dashed #fca5a5', borderRadius: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>New Variation</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 100px 80px', gap: 8, alignItems: 'center' }}>
-                        <input placeholder={`${activeModule.variantLabel1 || 'Size'} (eg ${activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? '500g' : 'XL'})`} value={newSize} onChange={e => setNewSize(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
-                        <input placeholder={`${activeModule.variantLabel2 || 'Color'} (eg ${activeModule.variantLabel2 === 'Color' || !activeModule.variantLabel2 ? 'Red' : 'Type'})`} value={newColor} onChange={e => setNewColor(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
-                        <input type="number" placeholder="Cost" value={newCost} onChange={e => setNewCost(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
-                        <input type="number" placeholder="Sale" value={newSale} onChange={e => setNewSale(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13 }} />
-                        <input type="number" placeholder="0" value={newQuantity} onChange={e => setNewQuantity(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '2px solid #ef4444', fontSize: 14, fontWeight: 700, textAlign: 'center' }} />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 100px 80px', gap: 8, alignItems: 'center' }}>
+                        <input placeholder={`${activeModule.variantLabel1 || 'Size'} (eg ${activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? '500g' : 'XL'})`} value={newSize} onChange={e => setNewSize(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                        <input placeholder={`${activeModule.variantLabel2 || 'Color'} (eg ${activeModule.variantLabel2 === 'Color' || !activeModule.variantLabel2 ? 'Red' : 'Type'})`} value={newColor} onChange={e => setNewColor(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                        <input type="number" placeholder="Cost" value={newCost} onChange={e => {
+                          const c = e.target.value; setNewCost(c);
+                          if (newMargin) setNewSale(calcSaleFromMargin(c, newMargin));
+                          else if (newSale) setNewMargin(calcMarginFromSale(c, newSale));
+                        }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                        <input type="number" placeholder="Margin%" value={newMargin} onChange={e => {
+                          const m = e.target.value; setNewMargin(m);
+                          if (newCost) setNewSale(calcSaleFromMargin(newCost, m));
+                        }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                        <input type="number" placeholder="Sale" value={newSale} onChange={e => {
+                          const s = e.target.value; setNewSale(s);
+                          if (newCost) setNewMargin(calcMarginFromSale(newCost, s));
+                        }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                        <input type="number" placeholder="0" value={newQuantity} onChange={e => setNewQuantity(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '2px solid #ef4444', fontSize: 14, fontWeight: 700, textAlign: 'center', minWidth: 0, width: '100%' }} />
                       </div>
                     </div>
                   )}

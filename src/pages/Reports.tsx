@@ -143,6 +143,8 @@ export default function ReportsPage() {
     { name: 'HBL Pay', value: salesData.reduce((s, d) => s + (d.hbl_pay ?? 0), 0) },
   ].filter(d => d.value > 0) : [];
 
+  const totalGrossRevenue = salesData.reduce((s, d) => s + (d.gross_revenue ?? 0), 0);
+  const totalReturns = salesData.reduce((s, d) => s + (d.returns ?? 0), 0);
   const totalRevenue = salesData.reduce((s, d) => s + (d.revenue ?? 0), 0);
   const totalDiscount = salesData.reduce((s, d) => s + (d.discounts ?? 0), 0);
   const totalCount = salesData.reduce((s, d) => s + (d.count ?? 0), 0);
@@ -276,10 +278,10 @@ export default function ReportsPage() {
       {tab === 'sales' && (
         <div className="space-y-6">
           {/* Summary stats */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <div className="stat-card">
-              <p className="stat-label">Total Revenue</p>
-              <p className="stat-value text-brand-600">{fmt(totalRevenue)}</p>
+              <p className="stat-label">Gross Sales</p>
+              <p className="stat-value text-brand-600">{fmt(totalGrossRevenue)}</p>
               <p className="text-xs text-slate-400 mt-1">{totalCount} transactions</p>
             </div>
             <div className="stat-card">
@@ -287,8 +289,12 @@ export default function ReportsPage() {
               <p className="stat-value text-amber-600">{fmt(totalDiscount)}</p>
             </div>
             <div className="stat-card">
+              <p className="stat-label">Total Returns</p>
+              <p className="stat-value text-red-500">{fmt(totalReturns)}</p>
+            </div>
+            <div className="stat-card">
               <p className="stat-label">Net Revenue</p>
-              <p className="stat-value text-green-600">{fmt(totalRevenue - totalDiscount)}</p>
+              <p className="stat-value text-green-600">{fmt(totalRevenue)}</p>
             </div>
           </div>
 

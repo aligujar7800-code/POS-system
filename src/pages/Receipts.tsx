@@ -345,6 +345,9 @@ export function SaleDetailsModal({
         // In a real app, you might want to call process_sales_return too
         queryClient.invalidateQueries({ queryKey: ['sale-details', saleId] });
         queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+        queryClient.invalidateQueries({ queryKey: ['sales-report'] });
+        queryClient.invalidateQueries({ queryKey: ['pl'] });
+        queryClient.invalidateQueries({ queryKey: ['pl-statement'] });
         refetch();
       } else {
         toast("Refund failed: " + (result.message || "Unknown error"), "error");
@@ -857,6 +860,9 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
       toast("Exchange processed successfully", "success");
       queryClient.invalidateQueries({ queryKey: ['sales-history'] });
       queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-report'] });
+      queryClient.invalidateQueries({ queryKey: ['pl'] });
+      queryClient.invalidateQueries({ queryKey: ['pl-statement'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['financial-ledger'] });
