@@ -1,11 +1,11 @@
 {
-  "version": "1.4.2",
-  "notes": "Release notes for version v1.4.2",
-  "pub_date": "2026-06-20T17:04:12.922Z",
+  "version": "1.4.3",
+  "notes": "Release notes for version v1.4.3",
+  "pub_date": "2026-06-21T10:30:14.580Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZUVLcDFlVTdueXdteDBsaTJxem5iTXc3a0JvUU1QNEg5L0kzYkpEZlMwQVBBalAxaGhJK2FUK0NFQnErTi9DUDliRG90bjV6MFRzVkFvRUZHYWh0eHpwRnU4MXN0eFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxOTc0OTY3CWZpbGU6R3JvdyBTYWxlXzEuNC4yX3g2NC1zZXR1cC5leGUKd3pPRkZwZEFwM3QzZkFEMnpEL3EwWXRZQU9MMDcvSS9BcVlHR014cDdIK2xmZFo2ZzVPd0tkb1FaalJqbWdHZEl6RGV2eVM4UzE4MDFQb28wTlNsRHc9PQo=",
-      "url": "https://github.com/aligujar7800-code/POS-system/releases/download/v1.4.2/Grow.Sale_1.4.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZUVLcDFlVTdueTNqemsrYUR6NFVrNE4yU3dZaTBEcTZHeFJ3VUdQWFN4b0dNZ0dyRVVicWdaU1JTbVBUbExCMjFFcmI2MWZEcGpHZzBvZEozOGgvTjJDamRFbkhFc1FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDM3MTc2CWZpbGU6R3JvdyBTYWxlXzEuNC4zX3g2NC1zZXR1cC5leGUKSHBsRyt6QStjOHpjU3M2bVF2WU9MQklVcTdBWE1HbUJoMFNmUHB6VHJESmlxb0k0T20rQ2JPZGkxUnBIM1JYMFg4K2lvSms4T21HQi94NE1LZ2JXQ1E9PQo=",
+      "url": "https://github.com/aligujar7800-code/POS-system/releases/download/v1.4.3/Grow.Sale_1.4.3_x64-setup.exe"
     }
   }
 }
