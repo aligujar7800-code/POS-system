@@ -397,34 +397,43 @@ fn build_raster_image(base64_str: &str) -> Option<Vec<u8>> {
     };
     
     let (width, height) = final_img.dimensions();
-    let bytes_per_row = ((width + 7) / 8) as u16;
-
-    let mut raster_data = Vec::with_capacity((bytes_per_row as usize) * (height as usize));
-    
-    for y in 0..height {
-        for byte_idx in 0..bytes_per_row {
-            let mut byte = 0u8;
-            for bit in 0..8 {
-                let x = (byte_idx as u32) * 8 + bit;
-                if x < width {
-                    let pixel = final_img.get_pixel(x, y)[0];
-                    if pixel < 128 { // darker than 50% gray
-                        byte |= 1 << (7 - bit);
-                    }
-                }
-            }
-            raster_data.push(byte);
-        }
-    }
 
     let mut buf = Vec::new();
-    buf.extend_from_slice(b"\x1b\x61\x01"); 
-    buf.extend_from_slice(b"\x1D\x76\x30\x00");
-    buf.push((bytes_per_row & 0xFF) as u8);
-    buf.push((bytes_per_row >> 8) as u8);
-    buf.push((height & 0xFF) as u8);
-    buf.push((height >> 8) as u8);
-    buf.extend_from_slice(&raster_data);
-    buf.push(b'\n');
+    buf.extend_from_slice(b"\x1b\x40"); // Initialize printer
+    buf.extend_from_slice(b"\x1b\x61\x01"); // Center alignment
+    
+    // Set line spacing to 24 dots
+    buf.extend_from_slice(b"\x1b\x33\x18");
+
+    let bands = (height + 23) / 24;
+    for band in 0..bands {
+        // ESC * m nL nH d1...dk
+        buf.extend_from_slice(b"\x1b\x2a\x21"); // m = 33 (0x21) -> 24-dot double density
+        buf.push((width % 256) as u8);
+        buf.push((width / 256) as u8);
+        
+        for x in 0..width {
+            for i in 0..3 {
+                let mut byte = 0u8;
+                for bit in 0..8 {
+                    let y = band * 24 + i * 8 + bit;
+                    if y < height {
+                        let pixel = final_img.get_pixel(x, y)[0];
+                        if pixel < 128 { // darker than 50% gray
+                            byte |= 1 << (7 - bit);
+                        }
+                    }
+                }
+                buf.push(byte);
+            }
+        }
+        // Print and feed paper for the band
+        buf.extend_from_slice(b"\n");
+    }
+
+    // Reset line spacing to default
+    buf.extend_from_slice(b"\x1b\x32");
+    buf.extend_from_slice(b"\n");
+    
     Some(buf)
 }
