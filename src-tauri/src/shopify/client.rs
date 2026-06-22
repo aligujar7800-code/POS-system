@@ -195,6 +195,22 @@ impl ShopifyClient {
         parse_product_response(&data["product"])
     }
 
+    pub async fn delete_product(&self, shopify_product_id: i64) -> Result<(), String> {
+        let url = format!("{}/products/{}.json", self.base_url, shopify_product_id);
+        let resp = self.client.delete(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        if !resp.status().is_success() && resp.status() != reqwest::StatusCode::NOT_FOUND {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Shopify delete product error {}: {}", status, body));
+        }
+
+        Ok(())
+    }
+
     // ─── Inventory ───────────────────────────────────────────────────────
 
     pub async fn set_inventory_level(&self, inventory_item_id: i64, location_id: i64, available: i64) -> Result<(), String> {
@@ -268,6 +284,11 @@ pub struct ShopifyLocation {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ShopifyImage {
+    pub attachment: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CreateShopifyProduct {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -279,6 +300,8 @@ pub struct CreateShopifyProduct {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     pub variants: Vec<ShopifyVariant>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<ShopifyImage>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -292,6 +315,8 @@ pub struct UpdateShopifyProduct {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variants: Option<Vec<ShopifyVariant>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<ShopifyImage>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

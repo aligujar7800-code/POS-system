@@ -35,6 +35,7 @@ interface Settings {
   smart_product_import: boolean;
   camera_sale_mode: boolean;
   camera_scan_interval: number;
+  custom_receipt_template?: string;
 }
 
 interface SettingsState extends Settings {
@@ -78,6 +79,7 @@ export const useSettingsStore = create<SettingsState>()(
       smart_product_import: false,
       camera_sale_mode: false,
       camera_scan_interval: 2000,
+      custom_receipt_template: '',
 
       setSettings: (s) => set((state) => ({ ...state, ...s })),
       setLanguage: (language) => set({ language }),

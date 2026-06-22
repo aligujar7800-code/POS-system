@@ -61,7 +61,9 @@ export default function ReportsPage() {
       setGroupBy('daily');
     } else if (preset === 'weekly') {
       const from = new Date();
-      from.setDate(today.getDate() - today.getDay());
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+      from.setDate(diff);
       setFrom(getLocalStr(from));
       setGroupBy('daily');
     } else if (preset === 'monthly') {

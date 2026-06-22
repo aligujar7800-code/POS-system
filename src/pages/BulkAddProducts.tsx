@@ -32,6 +32,8 @@ interface BulkProductGroup {
   category_id: string;
   sizeGroups: SizeGroup[];
   product_meta: Record<string, any>;
+  imageBase64?: string;
+  imageExt?: string;
 }
 
 const emptyColor = (): VariantEntry => ({ color: '', quantity: 0, barcode: '', cost_price: '', sale_price: '' });
@@ -107,6 +109,21 @@ export default function BulkAddProducts() {
       if (p.id !== id) return p;
       return { ...p, product_meta: { ...p.product_meta, [key]: val } };
     }));
+  };
+
+  const handleImageUpload = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        setProducts(prev => prev.map(p => p.id === id ? { ...p, imageBase64: ev.target!.result as string, imageExt: ext } : p));
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const addSizeToProduct = (productId: string) => {
@@ -222,7 +239,9 @@ export default function BulkAddProducts() {
               sale_price: parseFloat(c.sale_price) || 0,
               initial_stock: 0,
               barcode: c.barcode || null,
-              product_meta: Object.keys(p.product_meta || {}).length > 0 ? JSON.stringify(p.product_meta) : null
+              product_meta: Object.keys(p.product_meta || {}).length > 0 ? JSON.stringify(p.product_meta) : null,
+              image_base64: p.imageBase64 || null,
+              image_ext: p.imageExt || null
             });
           }
         });
@@ -289,16 +308,29 @@ export default function BulkAddProducts() {
               <Trash2 className="w-5 h-5" />
             </button>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="md:col-span-1">
-                <label className="label text-[10px] font-black text-slate-400 uppercase">Product Name {pIdx + 1} *</label>
-                <input 
-                  value={p.name} 
-                  onChange={e => updateProductInfo(p.id, 'name', e.target.value)}
-                  className="input font-bold text-lg" 
-                  placeholder="e.g. Slim Fit Kurta" 
-                />
+            <div className="flex gap-6 mb-8">
+              <div className="w-24 h-24 shrink-0 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer hover:bg-slate-50 transition-colors">
+                {p.imageBase64 ? (
+                  <img src={p.imageBase64} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <>
+                    <Layers className="w-6 h-6 text-slate-400 mb-1" />
+                    <span className="text-[8px] font-bold text-slate-500 uppercase">Image</span>
+                  </>
+                )}
+                <input type="file" accept="image/*" onChange={(e) => handleImageUpload(p.id, e)} className="absolute inset-0 opacity-0 cursor-pointer" />
               </div>
+
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-1">
+                  <label className="label text-[10px] font-black text-slate-400 uppercase">Product Name {pIdx + 1} *</label>
+                  <input 
+                    value={p.name} 
+                    onChange={e => updateProductInfo(p.id, 'name', e.target.value)}
+                    className="input font-bold text-lg" 
+                    placeholder="e.g. Slim Fit Kurta" 
+                  />
+                </div>
               <div>
                 <label className="label text-[10px] font-black text-slate-400 uppercase">Article No *</label>
                 <input 
@@ -347,6 +379,7 @@ export default function BulkAddProducts() {
                 </select>
               </div>
             </div>
+          </div>
 
             {/* Business Specific Extra Fields */}
             {activeModule.extraFields && activeModule.extraFields.length > 0 && (

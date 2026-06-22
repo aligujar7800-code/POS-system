@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { cmd, formatCurrency } from '../lib/utils';
+import { formatCurrency, cmd } from '../lib/utils';
+import ReceiptHtmlPreview, { DEFAULT_TEMPLATE, ReceiptTemplate, ReceiptPreviewData } from '../components/ReceiptHtmlPreview';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../components/ui/Toaster';
 import { format } from 'date-fns';
@@ -47,7 +48,7 @@ export default function ReceiptsPage() {
     printer_type, printer_port, printer_baud, currency_symbol,
     shop_name, shop_address, shop_phone, shop_logo, shop_email,
     receipt_header, receipt_footer,
-    logo_width, logo_height, logo_align, receipt_font
+    logo_width, logo_height, logo_align, receipt_font, custom_receipt_template
   } = useSettingsStore();
 
   const [query, setQuery] = useState('');
@@ -273,6 +274,7 @@ export default function ReceiptsPage() {
           logo_height={logo_height}
           logo_align={logo_align}
           receipt_font={receipt_font}
+          custom_receipt_template={custom_receipt_template}
         />
       )}
 
@@ -291,7 +293,8 @@ export function SaleDetailsModal({
   saleId, onClose, onReprint, onReturn, currency_symbol, printer_type,
   shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer,
   logo_width, logo_height, logo_align, receipt_font,
-  autoPrint = false
+  autoPrint = false,
+  custom_receipt_template
 }: {
   saleId: number;
   onClose: () => void;
@@ -311,6 +314,7 @@ export function SaleDetailsModal({
   logo_align?: 'left' | 'center' | 'right';
   receipt_font?: string;
   autoPrint?: boolean;
+  custom_receipt_template?: string;
 }) {
   const { data, isLoading, error, refetch } = useQuery<[Sale, SaleItem[]]>({
     queryKey: ['sale-details', saleId],
@@ -401,123 +405,52 @@ export function SaleDetailsModal({
 
   const [sale, items] = data;
 
+  // Construct preview data
+  const variables = {
+    shop_name: shop_name || 'My Shop',
+    shop_address: shop_address || '',
+    shop_phone: shop_phone || '',
+    shop_email: shop_email || '',
+    invoice_number: sale.invoice_number,
+    invoice_date: format(new Date(sale.sale_date), 'dd MMM yyyy'),
+    invoice_time: format(new Date(sale.sale_date), 'hh:mm a'),
+    invoice_datetime: format(new Date(sale.sale_date), 'dd MMM yyyy, hh:mm a'),
+    customer_name: sale.customer_name || 'Walk-in',
+    customer_phone: sale.customer_phone || '',
+    cashier_name: "Cashier",
+    payment_method: sale.payment_method.toUpperCase(),
+    subtotal: sale.subtotal,
+    discount: sale.discount_amount,
+    tax: sale.tax_amount,
+    grand_total: sale.total_amount,
+    amount_paid: sale.paid_amount,
+    change_returned: sale.change_amount
+  };
+
+  const previewData: ReceiptPreviewData = {
+    variables,
+    items: items.map(i => ({
+      id: i.id,
+      name: i.product_name,
+      qty: i.quantity,
+      unit_price: i.unit_price,
+      total: i.total_price
+    })),
+    shop_logo,
+    logo_width,
+    logo_height,
+    currency_symbol
+  };
+
+  const template: ReceiptTemplate = custom_receipt_template 
+    ? JSON.parse(custom_receipt_template) 
+    : DEFAULT_TEMPLATE;
+
   // If autoPrint is true, we hide the modal UI (it will still render for @media print)
   if (autoPrint) {
     return (
-      <div className="print-receipt font-mono text-sm" style={{ opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
-        {/* ── Thermal-style Receipt Body ── */}
-        <div style={{ fontFamily: receipt_font || "'Courier New', Courier, monospace", fontSize: '12px', lineHeight: '1.6', color: '#000', letterSpacing: '0.02em' }}>
-          <div style={{ textAlign: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px dashed #333' }}>
-            {shop_logo && (
-              <img src={shop_logo} alt="Logo" style={{ 
-                width: `${logo_width || 120}px`, 
-                height: `${logo_height || 120}px`, 
-                margin: logo_align === 'center' ? '0 auto 6px' : logo_align === 'right' ? '0 0 6px auto' : '0 auto 6px 0',
-                display: 'block', 
-                objectFit: 'contain' 
-              }} />
-            )}
-            <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{shop_name || 'My Shop'}</div>
-            {shop_address && <div style={{ fontSize: '11px', marginTop: '2px' }}>{shop_address}</div>}
-            {shop_phone && <div style={{ fontSize: '11px' }}>{shop_phone}</div>}
-            {shop_email && <div style={{ fontSize: '11px' }}>{shop_email}</div>}
-          </div>
-
-          {receipt_header && (
-            <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px', padding: '4px 0', borderBottom: '1px dashed #999' }}>
-              {receipt_header.split('\n').map((line, idx) => <div key={idx}>{line}</div>)}
-            </div>
-          )}
-
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sale ID:</span><span style={{ fontWeight: 600 }}>{sale.invoice_number}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Date:</span><span>{format(new Date(sale.sale_date), 'dd MMM yyyy, hh:mm a')}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer:</span><span>{sale.customer_name || 'Walk-in'}</span></div>
-          </div>
-
-          <div style={{ borderTop: '1px dashed #333', borderBottom: '1px dashed #333', padding: '4px 0', marginBottom: '4px' }}>
-            <div style={{ display: 'flex', fontWeight: 'bold' }}>
-              <span style={{ flex: '1 1 40%' }}>Item</span>
-              <span style={{ width: '35px', textAlign: 'center' }}>Qty</span>
-              <span style={{ width: '70px', textAlign: 'right' }}>Rate</span>
-              <span style={{ width: '75px', textAlign: 'right' }}>Total</span>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '8px' }}>
-            {items.map((i, index) => (
-              <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
-                <div style={{ display: 'flex' }}>
-                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{index + 1}. {i.product_name}</span>
-                  <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
-                  <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currency_symbol)}</span>
-                  <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(i.total_price, currency_symbol)}</span>
-                </div>
-                {i.quantity > 1 && (
-                  <div style={{ fontSize: '10px', color: '#666', paddingLeft: '4px' }}>
-                    @ {formatCurrency(i.unit_price, currency_symbol)} x {i.quantity}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ borderTop: '1px dashed #333', paddingTop: '6px', marginBottom: '4px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>SUBTOTAL:</span><span>{formatCurrency(sale.subtotal, currency_symbol)}</span></div>
-            {sale.discount_amount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>DISCOUNT:</span><span>-{formatCurrency(sale.discount_amount, currency_symbol)}</span></div>
-            )}
-            {sale.tax_amount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TAX:</span><span>{formatCurrency(sale.tax_amount, currency_symbol)}</span></div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '4px 0', margin: '4px 0' }}>
-            <span>TOTAL:</span><span>{formatCurrency(sale.total_amount, currency_symbol)}</span>
-          </div>
-
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>PAID ({sale.payment_method.toUpperCase()}):</span><span>{formatCurrency(sale.paid_amount, currency_symbol)}</span></div>
-            {sale.change_amount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CHANGE:</span><span>{formatCurrency(sale.change_amount, currency_symbol)}</span></div>
-            )}
-            {(sale.total_amount - sale.paid_amount) > 0.01 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c00', fontWeight: 'bold' }}><span>BALANCE DUE:</span><span>{formatCurrency(sale.total_amount - sale.paid_amount, currency_symbol)}</span></div>
-            )}
-            {sale.notes && (
-              <div style={{ marginTop: '8px', padding: '6px', backgroundColor: '#f9f9f9', border: '1px solid #eee', fontSize: '10px' }}>
-                <span style={{ fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>NOTES:</span>
-                {sale.notes}
-              </div>
-            )}
-          </div>
-
-          <div style={{ borderTop: '3px double #333', marginBottom: '8px' }}></div>
-
-          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px' }}>
-            {shop_address && <div>{shop_address}</div>}
-            {shop_phone && <div>Tel: {shop_phone}</div>}
-            {shop_email && <div>{shop_email}</div>}
-          </div>
-
-          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '10px' }}>
-            {(receipt_footer || 'Thank You!').split('\n').map((line, idx) => (
-              <div key={idx}>{line}</div>
-            ))}
-          </div>
-
-          <div style={{ textAlign: 'center', margin: '8px 0' }}>
-            <Barcode
-              value={sale.invoice_number}
-              width={1.2}
-              height={40}
-              displayValue={true}
-              fontSize={11}
-              margin={0}
-              font="'Courier New', monospace"
-            />
-          </div>
-        </div>
+      <div className="print-receipt" style={{ opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
+        <ReceiptHtmlPreview template={template} data={previewData} />
       </div>
     );
   }
@@ -525,7 +458,7 @@ export function SaleDetailsModal({
   return (
     <>
       <div className="overlay no-print" onClick={onClose} />
-      <div className="dialog w-[400px] print-receipt font-mono text-sm">
+      <div className="dialog w-full max-w-[420px] print-receipt">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 no-print">
           <div>
             <h2 className="text-lg font-bold text-slate-800">Receipt Details</h2>
@@ -534,179 +467,51 @@ export function SaleDetailsModal({
           <button onClick={onClose} className="text-slate-400 hover:text-red-500 no-print"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* ── Thermal-style Receipt Body ── */}
-        <div style={{ fontFamily: receipt_font || "'Courier New', Courier, monospace", fontSize: '12px', lineHeight: '1.6', color: '#000', letterSpacing: '0.02em' }}>
-
-          {/* Shop Header - Centered */}
-          <div style={{ textAlign: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px dashed #333' }}>
-            {shop_logo && (
-              <img src={shop_logo} alt="Logo" style={{ 
-                width: `${logo_width || 120}px`, 
-                height: `${logo_height || 120}px`, 
-                margin: logo_align === 'center' ? '0 auto 6px' : logo_align === 'right' ? '0 0 6px auto' : '0 auto 6px 0',
-                display: 'block', 
-                objectFit: 'contain' 
-              }} />
-            )}
-            <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{shop_name || 'My Shop'}</div>
-            {shop_address && <div style={{ fontSize: '11px', marginTop: '2px' }}>{shop_address}</div>}
-            {shop_phone && <div style={{ fontSize: '11px' }}>{shop_phone}</div>}
-            {shop_email && <div style={{ fontSize: '11px' }}>{shop_email}</div>}
-          </div>
-
-          {/* Receipt Header Text (from settings) */}
-          {receipt_header && (
-            <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px', padding: '4px 0', borderBottom: '1px dashed #999' }}>
-              {receipt_header.split('\n').map((line, idx) => (
-                <div key={idx}>{line}</div>
-              ))}
-            </div>
-          )}
-
-          {/* Sale Info - Left/Right */}
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sale ID:</span><span style={{ fontWeight: 600 }}>{sale.invoice_number}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Date:</span><span>{format(new Date(sale.sale_date), 'dd MMM yyyy, hh:mm a')}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer:</span><span>{sale.customer_name || 'Walk-in'} {sale.customer_phone ? `(${sale.customer_phone})` : ''}</span></div>
-          </div>
-
-          {/* Items Header */}
-          <div style={{ borderTop: '1px dashed #333', borderBottom: '1px dashed #333', padding: '4px 0', marginBottom: '4px' }}>
-            <div style={{ display: 'flex', fontWeight: 'bold' }}>
-              <span style={{ flex: '1 1 40%' }}>Item</span>
-              <span style={{ width: '35px', textAlign: 'center' }}>Qty</span>
-              <span style={{ width: '70px', textAlign: 'right' }}>Rate</span>
-              <span style={{ width: '75px', textAlign: 'right' }}>Total</span>
-            </div>
-          </div>
-
-          {/* Items */}
-          <div style={{ marginBottom: '8px' }}>
-            {items.map((i, index) => (
-              <div key={i.id} style={{ borderBottom: '1px dotted #ccc', paddingBottom: '4px', marginBottom: '4px' }}>
-                <div style={{ display: 'flex' }}>
-                  <span style={{ flex: '1 1 40%', wordBreak: 'break-word' }}>{index + 1}. {i.product_name}</span>
-                  <span style={{ width: '35px', textAlign: 'center' }}>{i.quantity}</span>
-                  <span style={{ width: '70px', textAlign: 'right' }}>{formatCurrency(i.unit_price, currency_symbol)}</span>
-                  <span style={{ width: '75px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(i.total_price, currency_symbol)}</span>
-                </div>
-                {i.quantity > 1 && (
-                  <div style={{ fontSize: '10px', color: '#666', paddingLeft: '4px' }}>
-                    @ {formatCurrency(i.unit_price, currency_symbol)} x {i.quantity}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Separator */}
-          <div style={{ borderTop: '1px dashed #333', paddingTop: '6px', marginBottom: '4px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>SUBTOTAL:</span><span>{formatCurrency(sale.subtotal, currency_symbol)}</span></div>
-            {sale.discount_amount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>DISCOUNT:</span><span>-{formatCurrency(sale.discount_amount, currency_symbol)}</span></div>
-            )}
-            {sale.tax_amount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TAX:</span><span>{formatCurrency(sale.tax_amount, currency_symbol)}</span></div>
-            )}
-          </div>
-
-          {/* Total - Bold */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '4px 0', margin: '4px 0' }}>
-            <span>TOTAL:</span><span>{formatCurrency(sale.total_amount, currency_symbol)}</span>
-          </div>
-
-          {/* Payment */}
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>PAID ({sale.payment_method.toUpperCase()}):</span><span>{formatCurrency(sale.paid_amount, currency_symbol)}</span></div>
-            {sale.change_amount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CHANGE:</span><span>{formatCurrency(sale.change_amount, currency_symbol)}</span></div>
-            )}
-            {(sale.total_amount - sale.paid_amount) > 0.01 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c00', fontWeight: 'bold' }}><span>BALANCE DUE:</span><span>{formatCurrency(sale.total_amount - sale.paid_amount, currency_symbol)}</span></div>
-            )}
-            {sale.notes && (
-              <div style={{ marginTop: '8px', padding: '6px', backgroundColor: '#f9f9f9', border: '1px solid #eee', fontSize: '10px' }}>
-                <span style={{ fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>NOTES:</span>
-                {sale.notes}
-              </div>
-            )}
-          </div>
-
-          {/* Double-line separator */}
-          <div style={{ borderTop: '3px double #333', marginBottom: '8px' }}></div>
-
-          {/* Shop info repeated (like Python module) */}
-          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px' }}>
-            {shop_address && <div>{shop_address}</div>}
-            {shop_phone && <div>Tel: {shop_phone}</div>}
-            {shop_email && <div>{shop_email}</div>}
-          </div>
-
-          {/* Footer */}
-          <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '10px' }}>
-            {(receipt_footer || 'Thank You!').split('\n').map((line, idx) => (
-              <div key={idx}>{line}</div>
-            ))}
-          </div>
-
-          {/* Barcode */}
-          <div style={{ textAlign: 'center', margin: '8px 0' }}>
-            <Barcode
-              value={sale.invoice_number}
-              width={1.2}
-              height={40}
-              displayValue={true}
-              fontSize={11}
-              margin={0}
-              font="'Courier New', monospace"
-            />
-          </div>
+        <div className="flex justify-center w-full">
+          <ReceiptHtmlPreview template={template} data={previewData} />
         </div>
 
         <div className="mt-6 flex flex-col gap-3 no-print">
-          {/* Direct Thermal Printer (ESC/POS – sharp professional output) */}
           {printer_type && printer_type !== 'none' && (
+              <button
+                onClick={() => {
+                  onReprint();
+                  onClose();
+                }}
+                className="btn-primary py-2 rounded-lg flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print Receipt (Thermal Printer)
+              </button>
+            )}
+
             <button
-              onClick={() => {
-                onReprint();
-                onClose();
-              }}
-              className="btn-primary py-2 rounded-lg flex items-center justify-center gap-2"
+              onClick={() => window.print()}
+              className={`${printer_type && printer_type !== 'none' ? 'btn-secondary' : 'btn-primary'} py-2 rounded-lg flex items-center justify-center gap-2`}
             >
-              <Printer className="w-4 h-4" />
-              Print Receipt (Thermal Printer)
+              <Eye className="w-4 h-4" />
+              Print Preview (Browser)
             </button>
-          )}
 
-          {/* Browser Print Preview (A4 / PDF fallback) */}
-          <button
-            onClick={() => window.print()}
-            className={`${printer_type && printer_type !== 'none' ? 'btn-secondary' : 'btn-primary'} py-2 rounded-lg flex items-center justify-center gap-2`}
-          >
-            <Eye className="w-4 h-4" />
-            Print Preview (Browser)
-          </button>
-
-          <button
-            onClick={onReturn}
-            className="btn-secondary py-2 rounded-lg flex items-center justify-center gap-2 text-rose-600 border-rose-200 hover:bg-rose-50"
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            Return Items
-          </button>
-
-          {/* Gateway Refund Button */}
-          {['jazzcash', 'easypaisa', 'hbl_pay', 'stripe'].includes(sale.payment_method) && sale.status === 'paid' && (
             <button
-              onClick={handleGatewayRefund}
-              disabled={refundLoading}
-              className="btn-secondary py-2 rounded-lg flex items-center justify-center gap-2 text-orange-600 border-orange-200 hover:bg-orange-50 disabled:opacity-50"
+              onClick={onReturn}
+              className="btn-secondary py-2 rounded-lg flex items-center justify-center gap-2 text-rose-600 border-rose-200 hover:bg-rose-50"
             >
-              {refundLoading ? <RotateCw className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
-              Full Refund via {sale.payment_method}
+              <ArrowRightLeft className="w-4 h-4" />
+              Return Items
             </button>
-          )}
-        </div>
+
+            {['jazzcash', 'easypaisa', 'hbl_pay', 'stripe'].includes(sale.payment_method) && sale.status === 'paid' && (
+              <button
+                onClick={handleGatewayRefund}
+                disabled={refundLoading}
+                className="btn-secondary py-2 rounded-lg flex items-center justify-center gap-2 text-orange-600 border-orange-200 hover:bg-orange-50 disabled:opacity-50"
+              >
+                {refundLoading ? <RotateCw className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
+                Full Refund via {sale.payment_method}
+              </button>
+            )}
+          </div>
       </div>
     </>
   );
@@ -716,7 +521,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const { printer_type, printer_port, printer_baud, shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer, logo_width, logo_height, logo_align, receipt_font } = useSettingsStore();
+  const { printer_type, printer_port, printer_baud, shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer, logo_width, logo_height, logo_align, receipt_font, custom_receipt_template } = useSettingsStore();
 
   const { data, isLoading } = useQuery<[Sale, SaleItem[]]>({
     queryKey: ['sale-details', saleId],
@@ -890,6 +695,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
         currencySymbol={currencySymbol}
         printerConfig={{ printer_type, printer_port, printer_baud }}
         shopInfo={{ shop_name, shop_address, shop_phone, shop_logo, shop_email, receipt_header, receipt_footer, logo_width, logo_height, logo_align, receipt_font }}
+        custom_receipt_template={custom_receipt_template}
       />
     );
   }
@@ -1040,7 +846,7 @@ function ReturnItemsModal({ saleId, onClose, currencySymbol }: { saleId: number;
   );
 }
 
-function ExchangeReceiptModal({ returnId, saleId, onClose, currencySymbol, printerConfig, shopInfo }: any) {
+function ExchangeReceiptModal({ returnId, saleId, onClose, currencySymbol, printerConfig, shopInfo, custom_receipt_template }: any) {
   const { toast } = useToast();
   
   const returnQuery = useQuery<any>({
@@ -1113,7 +919,8 @@ function ExchangeReceiptModal({ returnId, saleId, onClose, currencySymbol, print
             printer_type: printerConfig.printer_type,
             port: printerConfig.printer_port,
             baud_rate: printerConfig.printer_baud,
-          }
+          },
+          template_json: custom_receipt_template || null
         });
         toast("Thermal receipt sent to printer", "success");
         onClose();

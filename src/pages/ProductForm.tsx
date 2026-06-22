@@ -4,11 +4,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cmd, cn } from '../lib/utils';
 import { useToast } from '../components/ui/Toaster';
-import { ArrowLeft, Plus, Trash2, RefreshCw, Package, Puzzle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, RefreshCw, Package, Puzzle, Image as ImageIcon, Upload } from 'lucide-react';
 import Barcode from 'react-barcode';
 import { backgroundSyncProduct, isShopifyConfigured } from '../lib/shopify';
 import { useBusinessStore } from '../stores/businessStore';
 import ModuleFields from '../components/modules/ModuleFields';
+import { useImageSrc } from '../lib/image';
 
 interface Category { id: number; name: string; parent_id?: number | null; }
 interface VariantEntry {
@@ -48,6 +49,12 @@ export default function ProductForm() {
   const [sizeGroups, setSizeGroups] = useState<SizeGroup[]>([emptySizeGroup()]);
   const [saving, setSaving] = useState(false);
 
+  const [imageBase64, setImageBase64] = useState('');
+  const [imageExt, setImageExt] = useState('');
+  const [existingImage, setExistingImage] = useState('');
+  const [removeImage, setRemoveImage] = useState(false);
+  const displayImage = useImageSrc(imageBase64 || existingImage);
+
   // Module system: get active business module
   const activeModule = useBusinessStore(s => s.getActiveModule)();
   const [productMeta, setProductMeta] = useState<Record<string, any>>(() => {
@@ -84,6 +91,7 @@ export default function ProductForm() {
       setDesc(p.description || '');
       setTaxPct(p.tax_percent?.toString() || '0');
       setLowStock(p.low_stock_threshold?.toString() || '5');
+      if (p.image_path) setExistingImage(p.image_path);
       // Load module-specific metadata
       if (p.product_meta) {
         try {
@@ -184,6 +192,30 @@ export default function ProductForm() {
     }));
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const ext = file.name.split('.').pop() || 'jpg';
+    setImageExt(ext);
+    
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        setImageBase64(ev.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setImageBase64('');
+    setExistingImage('');
+    setRemoveImage(true);
+  };
+
   const handleSave = async () => {
     if (!name.trim()) { toast('Product Name is required', 'error'); return; }
     setSaving(true);
@@ -225,6 +257,12 @@ export default function ProductForm() {
         savedId = typeof res === 'number' ? res : res?.id || 0;
       }
 
+      if (imageBase64 && savedId) {
+        await cmd('upload_product_image', { productId: savedId, base64Data: imageBase64, extension: imageExt });
+      } else if (removeImage && savedId) {
+        await cmd('remove_product_image', { productId: savedId });
+      }
+
       // Shopify: Auto-sync product if enabled
       isShopifyConfigured().then(configured => {
         if (configured) {
@@ -263,19 +301,46 @@ export default function ProductForm() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Main Info */}
           <div className="card p-6">
             <div className="flex items-center gap-2 mb-4 text-brand-600">
               <Package className="w-5 h-5" />
               <h2 className="font-bold text-lg">Product Details</h2>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="label text-xs font-bold text-slate-500 uppercase">Product Name *</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} className="input text-lg font-medium" placeholder="e.g. Cotton Polo Shirt" autoFocus />
+            <div className="flex flex-col md:flex-row gap-6 mb-6">
+              <div className="w-32 h-32 shrink-0 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer hover:bg-slate-50 transition-colors">
+                {displayImage ? (
+                  <>
+                    <img src={displayImage} alt="Preview" className="w-full h-full object-cover" />
+                    <button 
+                      onClick={handleRemoveImage}
+                      className="absolute top-1 right-1 p-1 bg-white/80 rounded-full hover:bg-red-50 hover:text-red-500 text-slate-500 transition-colors z-10"
+                      title="Remove Image"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Upload className="w-6 h-6 text-white" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">Upload</span>
+                  </>
+                )}
+                <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
               </div>
+              
+              <div className="flex-1 space-y-4">
+                <div>
+                  <label className="label text-xs font-bold text-slate-500 uppercase">Product Name *</label>
+                  <input value={name} onChange={(e) => setName(e.target.value)} className="input text-lg font-medium" placeholder="e.g. Cotton Polo Shirt" autoFocus />
+                </div>
+              </div>
+            </div>
 
+            <div className="space-y-4">
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="label text-xs font-bold text-slate-500 uppercase">Article No *</label>

@@ -165,11 +165,13 @@ pub fn create_product(
 
 #[tauri::command]
 pub fn create_bulk_products(
+    app: tauri::AppHandle,
     db: State<DbState>,
     items: Vec<products::BulkProductItem>,
 ) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let conn = db.lock();
-    products::create_bulk_products(&conn, &items).map_err(|e| e.to_string())
+    products::create_bulk_products(&conn, &items, &data_dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -193,6 +195,77 @@ pub fn update_product(
 ) -> Result<(), String> {
     let conn = db.lock();
     products::update_product(&conn, id, &payload, variants).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn upload_product_image(
+    app: tauri::AppHandle,
+    db: State<DbState>,
+    product_id: i64,
+    base64_data: String,
+    extension: String,
+) -> Result<String, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let img_dir = data_dir.join("images");
+    std::fs::create_dir_all(&img_dir).map_err(|e| format!("Failed to create images dir: {}", e))?;
+    
+    // Check if there is an existing image and delete it to save space
+    {
+        let conn = db.lock();
+        if let Ok(Some(product)) = products::get_product_by_id(&conn, product_id) {
+            if let Some(old_path) = product.image_path {
+                let full_old_path = img_dir.join(&old_path);
+                let _ = std::fs::remove_file(full_old_path);
+            }
+        }
+    }
+
+
+    
+    // Decode base64
+    // Base64 string from frontend might contain "data:image/jpeg;base64," prefix. We should strip it if present.
+    let base64_clean = if let Some(idx) = base64_data.find(',') {
+        &base64_data[idx + 1..]
+    } else {
+        &base64_data
+    };
+
+    use base64::{Engine as _, engine::general_purpose};
+    let bytes = general_purpose::STANDARD.decode(base64_clean).map_err(|e| format!("Base64 decode failed: {}", e))?;
+    
+    // Process image: resize and compress
+    let final_bytes = match image::load_from_memory(&bytes) {
+        Ok(img) => {
+            // Resize to max 800x800, preserving aspect ratio
+            let resized = img.resize(800, 800, image::imageops::FilterType::Lanczos3);
+            let mut out_bytes: Vec<u8> = Vec::new();
+            let mut cursor = std::io::Cursor::new(&mut out_bytes);
+            
+            // Re-encode as JPEG with 80% quality to compress
+            if resized.write_to(&mut cursor, image::ImageOutputFormat::Jpeg(80)).is_ok() {
+                out_bytes
+            } else {
+                bytes // Fallback to original
+            }
+        },
+        Err(_) => bytes, // Not a valid image or unsupported, save original
+    };
+
+    // Always save as .jpg for compressed
+    let final_extension = "jpg";
+    let filename = format!("prod_{}_{}.{}", product_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(), final_extension);
+    let path = img_dir.join(&filename);
+
+    std::fs::write(&path, final_bytes).map_err(|e| format!("Write failed: {}", e))?;
+    
+    // Update db
+    let conn = db.lock();
+    conn.execute(
+        "UPDATE products SET image_path = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![filename, product_id],
+    ).map_err(|e| e.to_string())?;
+    
+    Ok(filename)
 }
 
 #[tauri::command]
@@ -232,6 +305,34 @@ pub fn get_stock_ledger(
         date_from.as_deref(),
         date_to.as_deref(),
     ).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_product_image(
+    db: State<DbState>,
+    app: tauri::AppHandle,
+    product_id: i64,
+) -> Result<(), String> {
+    let conn = db.lock();
+    
+    // Check current image_path
+    let product = products::get_product_by_id(&conn, product_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Product not found".to_string())?;
+        
+    if let Some(img_path) = product.image_path {
+        if let Ok(data_dir) = app.path().app_data_dir() {
+            let full_path = data_dir.join("images").join(img_path);
+            let _ = std::fs::remove_file(full_path);
+        }
+    }
+    
+    conn.execute(
+        "UPDATE products SET image_path = NULL, updated_at = datetime('now') WHERE id = ?1",
+        rusqlite::params![product_id],
+    ).map_err(|e| e.to_string())?;
+    
+    Ok(())
 }
 
 #[tauri::command]
@@ -644,16 +745,17 @@ pub fn detect_printers() -> Result<Vec<detection::PrinterInfo>, String> {
 }
 
 #[tauri::command]
-pub fn test_print(config: printer::PrinterConfig) -> Result<(), String> {
-    printer::test_print(&config)
+pub fn test_print(config: printer::PrinterConfig, template_json: Option<String>) -> Result<(), String> {
+    printer::test_print(&config, template_json)
 }
 
 #[tauri::command]
 pub fn print_receipt(
     data: printer::ReceiptData,
     config: printer::PrinterConfig,
+    template_json: Option<String>,
 ) -> Result<(), String> {
-    printer::print_receipt(&data, &config)
+    printer::print_receipt(&data, &config, template_json)
 }
 
 #[tauri::command]
@@ -696,9 +798,16 @@ pub fn print_sale_by_id(
     let shop_address = settings.get("shop_address").cloned().unwrap_or_default();
     let shop_phone = settings.get("shop_phone").cloned().unwrap_or_default();
     let shop_email = settings.get("shop_email").cloned().unwrap_or_default();
+    let shop_website = settings.get("shop_website").cloned();
+    let shop_ntn = settings.get("shop_ntn").cloned();
+    let shop_strn = settings.get("shop_strn").cloned();
     let shop_logo = settings.get("shop_logo").cloned();
+    let logo_width = settings.get("logo_width").and_then(|v| v.parse::<f32>().ok());
+    let logo_height = settings.get("logo_height").and_then(|v| v.parse::<f32>().ok());
+    let currency_symbol = settings.get("currency_symbol").cloned();
     let receipt_header = settings.get("receipt_header").cloned().unwrap_or_default();
     let receipt_footer = settings.get("receipt_footer").cloned().unwrap_or_else(|| "Thank You!".to_string());
+    let template_json = settings.get("custom_receipt_template").cloned();
 
     let receipt_items = items.into_iter().map(|i| printer::ReceiptItem {
         name: i.product_name,
@@ -712,12 +821,19 @@ pub fn print_sale_by_id(
         shop_address,
         shop_phone,
         shop_email,
+        shop_website,
+        shop_ntn,
+        shop_strn,
         shop_logo,
+        logo_width,
+        logo_height,
+        currency_symbol,
         header: receipt_header,
         invoice_number: sale.invoice_number,
         sale_date: sale.sale_date,
         customer_name: sale.customer_name,
         customer_phone: sale.customer_phone,
+        customer_email: None, // No email in sale row currently
         cashier: "Cashier".to_string(), // In future map created_by to username
         items: receipt_items,
         subtotal: sale.subtotal,
@@ -730,7 +846,7 @@ pub fn print_sale_by_id(
         footer: receipt_footer,
     };
 
-    printer::print_receipt(&data, &config)
+    printer::print_receipt(&data, &config, template_json)
 }
 
 #[tauri::command]
@@ -756,9 +872,98 @@ pub fn backup_database(
         .path()
         .app_data_dir()
         .map_err(|e: tauri::Error| e.to_string())?;
-    let src_path = data_dir.join("pos.db");
+    let db_path = data_dir.join("pos.db");
+    let images_dir = data_dir.join("images");
+
+    if dest_path.ends_with(".db") {
+        // Legacy backup format
+        std::fs::copy(&db_path, &dest_path).map_err(|e| format!("Copy failed: {}", e))?;
+    } else {
+        // Zip format
+        let file = std::fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .unix_permissions(0o755);
+
+        // Add version marker
+        zip.start_file("version.txt", options.clone()).map_err(|e| e.to_string())?;
+        use std::io::Write;
+        zip.write_all(b"v2_zip_backup").map_err(|e| e.to_string())?;
+
+        // Add database
+        zip.start_file("pos.db", options.clone()).map_err(|e| e.to_string())?;
+        if let Ok(mut db_file) = std::fs::File::open(&db_path) {
+            std::io::copy(&mut db_file, &mut zip).map_err(|e| e.to_string())?;
+        }
+
+        // Add images
+        if images_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&images_dir) {
+                for entry in entries.flatten() {
+                    if entry.path().is_file() {
+                        let name = format!("images/{}", entry.file_name().to_string_lossy());
+                        zip.start_file(name, options.clone()).map_err(|e| e.to_string())?;
+                        let mut img_file = std::fs::File::open(entry.path()).map_err(|e| e.to_string())?;
+                        std::io::copy(&mut img_file, &mut zip).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+        zip.finish().map_err(|e| e.to_string())?;
+    }
     
-    std::fs::copy(&src_path, &dest_path).map_err(|e| format!("Copy failed: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restore_local_backup(
+    app: tauri::AppHandle,
+    src_path: String,
+) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+    let dest_db_path = data_dir.join("pos.db");
+    let images_dir = data_dir.join("images");
+
+    if src_path.ends_with(".db") {
+        // Legacy DB restore
+        std::fs::copy(&src_path, &dest_db_path).map_err(|e| e.to_string())?;
+    } else if src_path.ends_with(".zip") {
+        // Zip restore
+        let file = std::fs::File::open(&src_path).map_err(|e| e.to_string())?;
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+        
+        let _ = std::fs::create_dir_all(&images_dir);
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+            let outpath = match file.enclosed_name() {
+                Some(path) => path.to_owned(),
+                None => continue,
+            };
+
+            if (*file.name()).ends_with('/') {
+                continue;
+            }
+
+            if file.name() == "pos.db" {
+                let mut outfile = std::fs::File::create(&dest_db_path).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+            } else if file.name().starts_with("images/") {
+                if let Some(file_name) = outpath.file_name() {
+                    let img_path = images_dir.join(file_name);
+                    let mut outfile = std::fs::File::create(&img_path).map_err(|e| e.to_string())?;
+                    std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    } else {
+        return Err("Unsupported backup format. Must be .db or .zip".to_string());
+    }
+
     Ok(())
 }
 
@@ -1304,10 +1509,19 @@ pub async fn shopify_get_locations(
 
 #[tauri::command]
 pub async fn shopify_sync_product(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     product_id: i64,
 ) -> Result<String, String> {
-    let client = get_shopify_client(&db).await?;
+    do_shopify_sync_product(app, db.inner().clone(), product_id).await
+}
+
+pub async fn do_shopify_sync_product(
+    app: tauri::AppHandle,
+    db: DbState,
+    product_id: i64,
+) -> Result<String, String> {
+    let client = get_shopify_client_from_arc(&db).await?;
 
     // Fetch local product + variants
     let (product, variants, existing_mappings) = {
@@ -1321,6 +1535,19 @@ pub async fn shopify_sync_product(
             .map_err(|e| e.to_string())?;
         (prod, vars, maps)
     };
+
+    // Load Image if present
+    let mut shopify_images: Option<Vec<crate::shopify::client::ShopifyImage>> = None;
+    if let Some(img_path) = &product.image_path {
+        if let Ok(data_dir) = app.path().app_data_dir() {
+            let full_path = data_dir.join("images").join(img_path);
+            if let Ok(bytes) = std::fs::read(&full_path) {
+                use base64::{Engine as _, engine::general_purpose};
+                let b64 = general_purpose::STANDARD.encode(&bytes);
+                shopify_images = Some(vec![crate::shopify::client::ShopifyImage { attachment: b64 }]);
+            }
+        }
+    }
 
     // Check if product already exists on Shopify
     let has_shopify_id = existing_mappings.iter()
@@ -1350,6 +1577,7 @@ pub async fn shopify_sync_product(
             body_html: product.description.clone(),
             status: Some("active".to_string()),
             variants: Some(shopify_variants),
+            images: shopify_images,
         };
 
         let result = client.update_product(shopify_pid, &update).await;
@@ -1402,6 +1630,7 @@ pub async fn shopify_sync_product(
             product_type: product.category_name.clone(),
             status: Some("active".to_string()),
             variants: shopify_variants,
+            images: shopify_images,
         };
 
         let result = client.create_product(&create).await;
@@ -1430,6 +1659,60 @@ pub async fn shopify_sync_product(
                 Err(format!("Shopify sync failed (queued for retry): {}", e))
             }
         }
+    }
+}
+
+#[tauri::command]
+pub async fn shopify_delete_product(
+    db: State<'_, DbState>,
+    product_id: i64,
+) -> Result<String, String> {
+    // Attempt to find Shopify mapping before we even have a client
+    let shopify_pid = {
+        let conn = db.lock();
+        let maps = shopify::get_mapping_by_local_product(&conn, product_id).map_err(|e| e.to_string())?;
+        maps.iter()
+            .find(|m| m.local_variant_id.is_none() || m.shopify_product_id.is_some())
+            .and_then(|m| m.shopify_product_id)
+    };
+
+    if let Some(pid) = shopify_pid {
+        let client = get_shopify_client(&db).await?;
+        match client.delete_product(pid).await {
+            Ok(_) => {
+                let conn = db.lock();
+                let _ = shopify::delete_mapping_by_local_product(&conn, product_id);
+                Ok(format!("Deleted product from Shopify (ID: {})", pid))
+            }
+            Err(e) => {
+                let conn = db.lock();
+                let payload = serde_json::json!({
+                    "action": "delete_product",
+                    "product_id": product_id,
+                    "shopify_product_id": pid,
+                }).to_string();
+                let _ = shopify::enqueue_sync(&conn, "delete_product", &payload);
+                Err(format!("Shopify delete failed (queued for retry): {}", e))
+            }
+        }
+    } else {
+        Ok("Product not linked to Shopify, skipped deletion.".into())
+    }
+}
+
+pub async fn do_shopify_delete_product(
+    db: DbState,
+    product_id: i64,
+    shopify_product_id: i64,
+) -> Result<String, String> {
+    let client = get_shopify_client_from_arc(&db).await?;
+    match client.delete_product(shopify_product_id).await {
+        Ok(_) => {
+            let conn = db.lock();
+            let _ = shopify::delete_mapping_by_local_product(&conn, product_id);
+            Ok(format!("Deleted product from Shopify (ID: {})", shopify_product_id))
+        }
+        Err(e) => Err(format!("Shopify delete failed: {}", e))
     }
 }
 
@@ -1481,7 +1764,14 @@ pub async fn shopify_create_order(
     db: State<'_, DbState>,
     sale_id: i64,
 ) -> Result<String, String> {
-    let client = get_shopify_client(&db).await?;
+    do_shopify_create_order(db.inner().clone(), sale_id).await
+}
+
+pub async fn do_shopify_create_order(
+    db: DbState,
+    sale_id: i64,
+) -> Result<String, String> {
+    let client = get_shopify_client_from_arc(&db).await?;
 
     let (sale, items) = {
         let conn = db.lock();
@@ -1564,6 +1854,7 @@ pub fn shopify_get_pending_syncs(db: State<DbState>) -> Result<Vec<shopify::Sync
 
 #[tauri::command]
 pub async fn shopify_retry_pending(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
 ) -> Result<String, String> {
     let pending = {
@@ -1591,37 +1882,30 @@ pub async fn shopify_retry_pending(
                 let qty = payload["quantity"].as_i64().unwrap_or(0);
                 client.set_inventory_level(inv_id, loc_id, qty).await.map(|_| ())
             }
-            "create_product" => {
-                // Re-trigger full product sync
+            "create_product" | "update_product" => {
                 let pid = payload["product_id"].as_i64().unwrap_or(0);
                 if pid > 0 {
-                    // Mark as done, the caller should re-invoke shopify_sync_product
-                    let conn = db.lock();
-                    let _ = shopify::mark_sync_done(&conn, item.id);
-                    success_count += 1;
-                    continue;
+                    do_shopify_sync_product(app.clone(), db.inner().clone(), pid).await.map(|_| ())
+                } else {
+                    Err("Invalid product_id".into())
                 }
-                Err("Invalid product_id".into())
             }
-            "update_product" => {
+            "delete_product" => {
                 let pid = payload["product_id"].as_i64().unwrap_or(0);
-                if pid > 0 {
-                    let conn = db.lock();
-                    let _ = shopify::mark_sync_done(&conn, item.id);
-                    success_count += 1;
-                    continue;
+                let spid = payload["shopify_product_id"].as_i64().unwrap_or(0);
+                if pid > 0 && spid > 0 {
+                    do_shopify_delete_product(db.inner().clone(), pid, spid).await.map(|_| ())
+                } else {
+                    Err("Invalid product_id".into())
                 }
-                Err("Invalid product_id".into())
             }
             "create_order" => {
                 let sid = payload["sale_id"].as_i64().unwrap_or(0);
                 if sid > 0 {
-                    let conn = db.lock();
-                    let _ = shopify::mark_sync_done(&conn, item.id);
-                    success_count += 1;
-                    continue;
+                    do_shopify_create_order(db.inner().clone(), sid).await.map(|_| ())
+                } else {
+                    Err("Invalid sale_id".into())
                 }
-                Err("Invalid sale_id".into())
             }
             _ => Err(format!("Unknown action: {}", action)),
         };
@@ -1653,6 +1937,10 @@ pub fn shopify_clear_done_syncs(db: State<DbState>) -> Result<usize, String> {
 ///   1. Direct access token (shpat_...) — legacy custom apps
 ///   2. Client ID + Client Secret — Dev Dashboard apps (exchanges for temp token)
 async fn get_shopify_client(db: &State<'_, DbState>) -> Result<crate::shopify::client::ShopifyClient, String> {
+    get_shopify_client_from_arc(db.inner()).await
+}
+
+async fn get_shopify_client_from_arc(db: &DbState) -> Result<crate::shopify::client::ShopifyClient, String> {
     let (domain, token, client_id, client_secret) = {
         let conn = db.lock();
         let settings = settings::get_all_settings(&conn).map_err(|e| e.to_string())?;
@@ -2109,4 +2397,27 @@ pub fn payment_gateway_summary(
 ) -> Result<serde_json::Value, String> {
     let conn = db.lock();
     payments::gateway_transaction_summary(&conn, &from, &to).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_image_base64(app: tauri::AppHandle, image_path: String) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+    let full_path = data_dir.join("images").join(&image_path);
+    
+    let bytes = std::fs::read(&full_path).map_err(|e| e.to_string())?;
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    
+    let ext = full_path.extension().and_then(|e| e.to_str()).unwrap_or("jpeg").to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/jpeg",
+    };
+    
+    Ok(format!("data:{};base64,{}", mime, b64))
 }

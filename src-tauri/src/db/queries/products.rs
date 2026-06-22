@@ -162,6 +162,8 @@ pub struct BulkProductItem {
     pub barcode: Option<String>,
     pub article_number: Option<String>,
     pub product_meta: Option<String>,
+    pub image_base64: Option<String>,
+    pub image_ext: Option<String>,
 }
 
 pub fn create_product(
@@ -235,6 +237,7 @@ pub fn create_product(
 pub fn create_bulk_products(
     conn: &Connection,
     items: &[BulkProductItem],
+    app_data_dir: &std::path::Path,
 ) -> Result<()> {
     for item in items {
         // 1. Find or create product
@@ -265,7 +268,24 @@ pub fn create_bulk_products(
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
                     params![item.name, sku, item.barcode, item.category_id, item.cost_price, item.sale_price, article_no, item.product_meta],
                 )?;
-                conn.last_insert_rowid()
+                let new_id = conn.last_insert_rowid();
+
+                // Handle bulk image saving if provided
+                if let Some(base64_str) = &item.image_base64 {
+                    let ext = item.image_ext.as_deref().unwrap_or("jpg").replace(".", "");
+                    let file_name = format!("product_{}_{}.{}", new_id, chrono::Utc::now().timestamp(), ext);
+                    let img_dir = app_data_dir.join("images");
+                    let _ = std::fs::create_dir_all(&img_dir);
+                    let file_path = img_dir.join(&file_name);
+                        
+                        if let Ok(bytes) = base64_str.split(',').nth(1).unwrap_or(base64_str).parse::<String>().map(|b| base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b).unwrap_or_default()) {
+                            if !bytes.is_empty() {
+                                let _ = std::fs::write(file_path, bytes);
+                                let _ = conn.execute("UPDATE products SET image_path = ?1 WHERE id = ?2", params![file_name, new_id]);
+                            }
+                        }
+                }
+                new_id
             }
         };
 

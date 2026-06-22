@@ -94,6 +94,7 @@ export default function App() {
             voice_full_mode: dbSettings.voice_full_mode === 'true',
             voice_model_ready: dbSettings.voice_model_ready === 'true',
             voice_custom_commands: dbSettings.voice_custom_commands || '{"simple":{},"full":{}}',
+            custom_receipt_template: dbSettings.custom_receipt_template || '',
           });
           if (dbSettings.business_type) {
             setBusinessType(dbSettings.business_type);

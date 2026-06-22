@@ -59,12 +59,32 @@ pub fn create_backup_zip(db_path: &PathBuf, output_dir: &PathBuf) -> Result<(Pat
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o644);
 
+    // Version marker
+    zip_writer.start_file("version.txt", options).map_err(|e| format!("ZIP start_file error: {}", e))?;
+    zip_writer.write_all(b"v2_zip_backup").map_err(|e| format!("ZIP write error: {}", e))?;
+
     zip_writer
         .start_file("pos.db", options)
         .map_err(|e| format!("ZIP start_file error: {}", e))?;
     zip_writer
         .write_all(&db_data)
         .map_err(|e| format!("ZIP write error: {}", e))?;
+
+    // Add images
+    let images_dir = db_path.parent().unwrap().join("images");
+    if images_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&images_dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_file() {
+                    let name = format!("images/{}", entry.file_name().to_string_lossy());
+                    zip_writer.start_file(name, options).ok();
+                    if let Ok(mut img_file) = std::fs::File::open(entry.path()) {
+                        let _ = std::io::copy(&mut img_file, &mut zip_writer);
+                    }
+                }
+            }
+        }
+    }
     zip_writer
         .finish()
         .map_err(|e| format!("ZIP finish error: {}", e))?;
@@ -365,15 +385,22 @@ pub async fn download_latest_backup(
         .await
         .map_err(|e| format!("Read download: {}", e))?;
 
-    // Extract ZIP to get pos.db
     let cursor = std::io::Cursor::new(zip_data.to_vec());
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| format!("Invalid ZIP file: {}", e))?;
+
+    let images_dir = restore_path.parent().unwrap().join("images");
+    let _ = std::fs::create_dir_all(&images_dir);
 
     for i in 0..archive.len() {
         let mut file = archive
             .by_index(i)
             .map_err(|e| format!("ZIP entry error: {}", e))?;
+        
+        let outpath = match file.enclosed_name() {
+            Some(path) => path.to_owned(),
+            None => continue,
+        };
 
         if file.name() == "pos.db" {
             let mut db_data = Vec::new();
@@ -382,12 +409,16 @@ pub async fn download_latest_backup(
 
             std::fs::write(restore_path, &db_data)
                 .map_err(|e| format!("Write restored DB: {}", e))?;
-
-            return Ok(latest.name.clone());
+        } else if file.name().starts_with("images/") {
+            if let Some(file_name) = outpath.file_name() {
+                let img_path = images_dir.join(file_name);
+                let mut outfile = std::fs::File::create(&img_path).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+            }
         }
     }
 
-    Err("pos.db not found in backup ZIP".into())
+    Ok(latest.name.clone())
 }
 
 // ─── Full Backup Flow ────────────────────────────────────────────────────────

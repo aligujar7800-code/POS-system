@@ -39,6 +39,7 @@ interface Product {
   tax_percent: number;
   total_stock: number;
   product_meta?: string;
+  image_path?: string;
 }
 interface ProductVariant {
   id: number; product_id: number; size?: string; color?: string;
@@ -69,6 +70,24 @@ function ScannerIndicator() {
 }
 
 // ─── Product card ─────────────────────────────────────────────────────────────
+import { useImageSrc } from '../lib/image';
+
+function ProductThumbnail({ imagePath }: { imagePath?: string }) {
+  const src = useImageSrc(imagePath);
+  if (!src) {
+    return (
+      <div className="w-full aspect-square bg-slate-100 rounded-lg mb-2 flex items-center justify-center text-slate-300">
+        <ShoppingCart className="w-8 h-8" />
+      </div>
+    );
+  }
+  return (
+    <div className="w-full aspect-square bg-slate-100 rounded-lg mb-2 flex items-center justify-center overflow-hidden">
+      <img src={src} alt="Thumbnail" loading="lazy" className="w-full h-full object-cover" />
+    </div>
+  );
+}
+
 function ProductCard({ product, onAdd }: { product: Product; onAdd: (p: Product) => void }) {
   const { currency_symbol } = useSettingsStore();
   const stockColor = product.total_stock === 0 ? 'text-red-500' : product.total_stock <= 5 ? 'text-amber-500' : 'text-green-600';
@@ -78,9 +97,7 @@ function ProductCard({ product, onAdd }: { product: Product; onAdd: (p: Product)
       disabled={product.total_stock === 0}
       className="card-hover p-3 text-left w-full disabled:opacity-50 disabled:cursor-not-allowed transition-transform hover:scale-[1.01] active:scale-[0.99]"
     >
-      <div className="w-full aspect-square bg-slate-100 rounded-lg mb-2 flex items-center justify-center">
-        <ShoppingCart className="w-8 h-8 text-slate-300" />
-      </div>
+      <ProductThumbnail imagePath={product.image_path} />
       <p className="text-xs font-medium text-slate-800 truncate">{product.name}</p>
       <p className="text-[10px] text-slate-400 truncate">
         {product.category_name && <span className="text-brand-600 font-semibold">[{product.category_name}] </span>}

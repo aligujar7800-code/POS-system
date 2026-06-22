@@ -10,9 +10,24 @@ import BarcodeModal from '../components/ui/BarcodeModal';
 import BatchBarcodeModal from '../components/ui/BatchBarcodeModal';
 import SmartProductImportModal from '../components/SmartProductImportModal';
 import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw, ShoppingBag, Scan } from 'lucide-react';
-import { syncProductToShopify } from '../lib/shopify';
+import { syncProductToShopify, isShopifyConfigured } from '../lib/shopify';
 import { useBusinessStore } from '../stores/businessStore';
 import { ModuleInventoryValue } from '../components/modules/ModuleFields';
+import { useImageSrc } from '../lib/image';
+
+function ProductThumbnail({ imagePath }: { imagePath?: string }) {
+  const src = useImageSrc(imagePath);
+  if (!src) {
+    return (
+      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-slate-100 text-slate-400">
+        <Package className="w-5 h-5" />
+      </div>
+    );
+  }
+  return (
+    <img src={src} alt="Thumbnail" loading="lazy" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-slate-200" />
+  );
+}
 
 interface Product {
   id: number; name: string; sku: string; barcode?: string;
@@ -48,6 +63,7 @@ export default function InventoryPage() {
   // Deletion State
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [shopifyDeletePrompt, setShopifyDeletePrompt] = useState<Product | null>(null);
 
   // Variant & Barcode State
   const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
@@ -294,9 +310,7 @@ export default function InventoryPage() {
                 >
                   <td>
                     <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${expandedProductId === p.id ? 'bg-brand-100 text-brand-600' : 'bg-slate-100 text-slate-400'}`}>
-                        <Package className="w-4 h-4" />
-                      </div>
+                      <ProductThumbnail imagePath={p.image_path} />
                       <div>
                         <p className="font-medium text-slate-800">{p.name}</p>
                         {p.brand && <p className="text-xs text-slate-400">{p.brand}</p>}
@@ -466,20 +480,70 @@ export default function InventoryPage() {
           if (!deletingProduct) return;
           setIsDeleting(true);
           try {
-            await cmd('delete_product', { id: deletingProduct.id });
-            toast('Product deleted successfully', 'success');
-            qc.invalidateQueries({ queryKey: ['products'] });
-            qc.invalidateQueries({ queryKey: ['categories'] });
+            const configured = await isShopifyConfigured();
+            if (configured) {
+              setShopifyDeletePrompt(deletingProduct);
+              setDeletingProduct(null);
+            } else {
+              await cmd('delete_product', { id: deletingProduct.id });
+              toast('Product deleted successfully', 'success');
+              qc.invalidateQueries({ queryKey: ['products'] });
+              qc.invalidateQueries({ queryKey: ['categories'] });
+              setDeletingProduct(null);
+            }
           } catch (e: any) {
             toast(e.toString(), 'error');
+            setDeletingProduct(null);
           } finally {
             setIsDeleting(false);
-            setDeletingProduct(null);
           }
         }}
         title="Delete Product?"
         message={`Are you sure you want to delete "${deletingProduct?.name}"? This will hide the product from POS and inventory lists.`}
         actionLabel="Delete"
+        isDestructive={true}
+      />
+
+      <AdminConfirmModal
+        isOpen={!!shopifyDeletePrompt}
+        onClose={async () => {
+          if (!shopifyDeletePrompt) return;
+          // User selected 'No' for Shopify deletion, so we only delete locally
+          try {
+            await cmd('delete_product', { id: shopifyDeletePrompt.id });
+            toast('Product deleted locally only', 'success');
+            qc.invalidateQueries({ queryKey: ['products'] });
+            qc.invalidateQueries({ queryKey: ['categories'] });
+          } catch (e: any) {
+            toast(`Local deletion error: ${e.toString()}`, 'error');
+          } finally {
+            setShopifyDeletePrompt(null);
+          }
+        }}
+        onConfirm={async () => {
+          if (!shopifyDeletePrompt) return;
+          // User selected 'Yes' for Shopify deletion
+          try {
+            toast('Deleting from Shopify...', 'info');
+            // Delete from Shopify first!
+            await cmd('shopify_delete_product', { productId: shopifyDeletePrompt.id });
+            
+            // If Shopify deletion succeeds, then delete locally
+            await cmd('delete_product', { id: shopifyDeletePrompt.id });
+            
+            toast('Product deleted locally and from Shopify', 'success');
+            qc.invalidateQueries({ queryKey: ['products'] });
+            qc.invalidateQueries({ queryKey: ['categories'] });
+          } catch (e: any) {
+            toast(`Shopify deletion failed: ${e.toString()}. Local product was NOT deleted.`, 'error');
+            // We DO NOT delete locally if Shopify deletion failed. The user can retry by clicking the trash icon again.
+          } finally {
+            setShopifyDeletePrompt(null);
+          }
+        }}
+        title="Delete from Shopify?"
+        message={`Do you also want to delete "${shopifyDeletePrompt?.name}" from your linked Shopify store?`}
+        actionLabel="Yes, Delete from Shopify"
         isDestructive={true}
       />
 

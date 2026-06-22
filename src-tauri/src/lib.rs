@@ -110,6 +110,9 @@ pub fn run() {
             create_bulk_products,
             delete_product,
             update_product,
+            upload_product_image,
+            get_image_base64,
+            remove_product_image,
             update_variant_stock,
             get_stock_ledger,
             get_all_categories,
@@ -181,6 +184,7 @@ pub fn run() {
             open_cash_drawer,
             // Backup
             backup_database,
+            restore_local_backup,
             get_db_path,
             // Cloud Backup
             cloud_backup_connect,
@@ -211,6 +215,7 @@ pub fn run() {
             shopify_test_connection,
             shopify_get_locations,
             shopify_sync_product,
+            shopify_delete_product,
             shopify_sync_inventory,
             shopify_create_order,
             shopify_get_mappings,

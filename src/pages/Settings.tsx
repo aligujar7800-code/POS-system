@@ -9,7 +9,8 @@ import { useToast } from '../components/ui/Toaster';
 import { Settings, Store, Printer, Users, Database, Globe, Check, RefreshCw, Tag, Save, LogOut, Plus, Trash2, ShoppingBag, Wifi, WifiOff, AlertTriangle, RotateCw, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Clock, Mail, HardDrive, History, Unplug, Timer, Usb, Network, Activity, ShieldCheck, ArrowDownToLine, CreditCard, X, Briefcase, Scan, Key, Loader2 } from 'lucide-react';
 import ImportWizard from '../components/ImportWizard';
 import BusinessTypeSelector from '../components/modules/BusinessTypeSelector';
-import { save } from '@tauri-apps/plugin-dialog';
+import ReceiptBuilder from './Settings/ReceiptBuilder';
+import { save, open } from '@tauri-apps/plugin-dialog';
 
 import jazzcashLogo from '../assets/jazzcash.png';
 import easypaisaLogo from '../assets/easypaisa.png';
@@ -456,7 +457,8 @@ export default function SettingsPage() {
   const testPrint = async () => {
     try {
       await cmd('test_print', {
-        config: { printer_type: printerType, port: printerPort, baud_rate: parseInt(printerBaud) || 9600 }
+        config: { printer_type: printerType, port: printerPort, baud_rate: parseInt(printerBaud) || 9600 },
+        template_json: settings.custom_receipt_template || null
       });
       toast('Test page sent!', 'success');
     } catch (e: any) {
@@ -580,16 +582,43 @@ export default function SettingsPage() {
   const exportDb = async () => {
     try {
       const destPath = await save({
-        filters: [{ name: 'SQLite Database', extensions: ['db'] }],
-        defaultPath: 'pos_backup.db'
+        filters: [
+          { name: 'New Backup Format (.zip) – Recommended', extensions: ['zip'] },
+          { name: 'Legacy Backup (.db) – Older format', extensions: ['db'] }
+        ],
+        defaultPath: 'pos_backup.zip'
       });
 
       if (!destPath) return;
 
       await cmd('backup_database', { destPath });
-      toast('Database exported successfully!', 'success');
+      toast('Backup exported successfully!', 'success');
     } catch (e: any) {
       toast(e.toString(), 'error');
+    }
+  };
+
+  const restoreLocalDb = async () => {
+    try {
+      const srcPath = await open({
+        filters: [
+          { name: 'Supported Backups', extensions: ['zip', 'db'] },
+          { name: 'New Backup Format', extensions: ['zip'] },
+          { name: 'Legacy Backup', extensions: ['db'] }
+        ],
+        multiple: false
+      });
+
+      if (!srcPath || Array.isArray(srcPath)) return;
+
+      toast('Restoring backup, please wait...', 'info');
+      await cmd('restore_local_backup', { srcPath });
+      toast('Backup restored successfully! Please restart the application.', 'success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (e: any) {
+      toast('Restore failed: ' + e.toString(), 'error');
     }
   };
 
@@ -897,103 +926,8 @@ export default function SettingsPage() {
 
           {/* Receipt */}
           {tab === 'receipt' && (
-            <div className="card p-6 space-y-5 max-w-xl">
-              <h2 className="font-semibold text-slate-700">{t('settings.receipt')}</h2>
-              
-              {/* Receipt Font */}
-              <div>
-                <label className="label">Receipt Font Family</label>
-                <p className="text-[11px] text-slate-400 mb-1">Select a professional font style for the printed receipt</p>
-                <select 
-                  value={receiptFont} 
-                  onChange={(e) => setReceiptFont(e.target.value)} 
-                  className="input"
-                >
-                  <option value="'Courier New', Courier, monospace">Courier New (Default, Monospace)</option>
-                  <option value="'Inter', sans-serif">Inter (Modern, Clean)</option>
-                  <option value="'Roboto', sans-serif">Roboto (Professional)</option>
-                  <option value="'Fira Code', monospace">Fira Code (Modern Monospace)</option>
-                  <option value="'Helvetica Neue', Helvetica, Arial, sans-serif">Helvetica Neue (Classic)</option>
-                  <option value="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif">Segoe UI (Windows Native)</option>
-                  <option value="system-ui, -apple-system, sans-serif">System UI (Native)</option>
-                  <option value="'Times New Roman', Times, serif">Times New Roman (Traditional)</option>
-                  <option value="'SF Pro Text', sans-serif">SF Pro (Apple Style)</option>
-                  <option value="'Space Mono', monospace">Space Mono (Tech/Modern)</option>
-                </select>
-              </div>
-
-              {/* Receipt Header */}
-              <div>
-                <label className="label">Receipt Header Text</label>
-                <p className="text-[11px] text-slate-400 mb-1">Shows at the top of receipt before items (e.g., promotions, announcements)</p>
-                <textarea 
-                  value={receiptHeader} 
-                  onChange={(e) => setReceiptHeader(e.target.value)} 
-                  className="input h-20 resize-none font-mono text-xs" 
-                  placeholder="e.g., SUMMER SALE - 20% OFF ALL ITEMS"
-                />
-              </div>
-
-              {/* Receipt Footer */}
-              <div>
-                <label className="label">{t('settings.receiptFooter')}</label>
-                <p className="text-[11px] text-slate-400 mb-1">Shows at the bottom of receipt (return policy, greetings, etc.)</p>
-                <textarea 
-                  value={footer} 
-                  onChange={(e) => setFooter(e.target.value)} 
-                  className="input h-24 resize-none font-mono text-xs" 
-                  placeholder={"RETURN POLICY\nReceipt and barcode on item\nare required for returns."}
-                />
-              </div>
-
-              {/* Shop Email */}
-              <div>
-                <label className="label">Shop Email (shown on receipt)</label>
-                <input 
-                  value={shopEmail} 
-                  onChange={(e) => setShopEmail(e.target.value)} 
-                  className="input" 
-                  placeholder="shop@example.com" 
-                />
-              </div>
-
-              {/* Live Preview */}
-              <div>
-                <label className="label">Receipt Font Preview</label>
-                <div 
-                  className="p-6 bg-white border border-dashed border-slate-300 w-80 shadow-sm text-center text-sm mx-auto"
-                  style={{ fontFamily: receiptFont, lineHeight: '1.6', color: '#000' }}
-                >
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase' }}>{shopName || 'Shop Name'}</div>
-                  <div style={{ fontSize: '12px' }}>{shopAddress}</div>
-                  <div style={{ fontSize: '12px', borderBottom: '1px dashed #333', paddingBottom: '8px', marginBottom: '8px' }}>{shopPhone}</div>
-                  
-                  {receiptHeader && (
-                    <div style={{ fontSize: '12px', marginBottom: '8px', borderBottom: '1px dashed #333', paddingBottom: '8px' }}>
-                      {receiptHeader.split('\n').map((l, i) => <div key={i}>{l}</div>)}
-                    </div>
-                  )}
-
-                  <div className="flex justify-between font-bold border-b border-dashed border-slate-300 pb-2 mb-2 text-xs">
-                    <span>ITEM</span>
-                    <span>TOTAL</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span>T-Shirt (M / Red)</span>
-                    <span>{currencySymbol} 1500</span>
-                  </div>
-                  <div className="flex justify-between font-bold border-t border-dashed border-slate-300 pt-2 mt-2 text-xs">
-                    <span>GRAND TOTAL</span>
-                    <span>{currencySymbol} 1500</span>
-                  </div>
-
-                  {footer && (
-                    <div style={{ fontSize: '10px', marginTop: '12px', paddingTop: '8px', borderTop: '1px dashed #333' }}>
-                      {footer.split('\n').map((l, i) => <div key={i}>{l}</div>)}
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="flex-1 min-w-0">
+              <ReceiptBuilder />
             </div>
           )}
 
@@ -2017,7 +1951,10 @@ export default function SettingsPage() {
                               )}
                             </button>
                             <button onClick={exportDb} className="btn-secondary" title="Export database to local file">
-                              <Database className="w-4 h-4" />
+                              <Database className="w-4 h-4" /> Export Local
+                            </button>
+                            <button onClick={restoreLocalDb} className="btn-secondary" title="Restore database from local file">
+                              <ArrowDownToLine className="w-4 h-4" /> Restore Local
                             </button>
                           </div>
                         </div>

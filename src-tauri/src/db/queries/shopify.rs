@@ -72,6 +72,11 @@ pub fn delete_mapping(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+pub fn delete_mapping_by_local_product(conn: &Connection, local_product_id: i64) -> Result<()> {
+    conn.execute("DELETE FROM shopify_mappings WHERE local_product_id = ?1", params![local_product_id])?;
+    Ok(())
+}
+
 pub fn delete_all_mappings(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM shopify_mappings", [])?;
     Ok(())
