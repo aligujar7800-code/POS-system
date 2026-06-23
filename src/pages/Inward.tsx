@@ -63,14 +63,17 @@ export default function InwardPage() {
   // We temporarily hold variant inputs here maps variant_id to { quantity, cost_price, sale_price }
   const [variantInputs, setVariantInputs] = useState<Record<number, { quantity: string, cost_price: string, sale_price: string, margin?: string }>>({});
 
-  // Adding new variant on the fly
-  const [showAddVariant, setShowAddVariant] = useState(false);
-  const [newColor, setNewColor] = useState('');
-  const [newSize, setNewSize] = useState('');
-  const [newQuantity, setNewQuantity] = useState('');
-  const [newCost, setNewCost] = useState('');
-  const [newSale, setNewSale] = useState('');
-  const [newMargin, setNewMargin] = useState('');
+  // Adding new variants on the fly
+  interface NewVariantInput {
+    id: string;
+    size: string;
+    color: string;
+    quantity: string;
+    cost_price: string;
+    sale_price: string;
+    margin: string;
+  }
+  const [newVariants, setNewVariants] = useState<NewVariantInput[]>([]);
 
   // Bulk Edit
   const [bulkCost, setBulkCost] = useState('');
@@ -108,10 +111,13 @@ export default function InwardPage() {
     });
     
     // Also apply to the "New Variation" fields if they are being used
-    if (bulkCost) setNewCost(bulkCost);
-    if (bulkSale) setNewSale(bulkSale);
-    if (bulkMargin) setNewMargin(bulkMargin);
-    if (bulkQty) setNewQuantity(bulkQty);
+    setNewVariants(prev => prev.map(nv => ({
+      ...nv,
+      ...(bulkCost && { cost_price: bulkCost }),
+      ...(bulkSale && { sale_price: bulkSale }),
+      ...(bulkMargin && { margin: bulkMargin }),
+      ...(bulkQty && { quantity: bulkQty }),
+    })));
 
     setBulkCost(''); setBulkSale(''); setBulkMargin(''); setBulkQty('');
   };
@@ -197,15 +203,15 @@ export default function InwardPage() {
       }
     });
 
-    if (showAddVariant) {
-      const q = parseInt(newQuantity) || 0;
+    newVariants.forEach((nv) => {
+      const q = parseInt(nv.quantity) || 0;
       if (q > 0) {
         let finalQty = q;
         if (activeModule.features.includes('vape_sale_mode')) {
           let isDevice = false;
           try { isDevice = JSON.parse((selectedProduct as any).product_meta || '{}').vape_product_type === 'device'; } catch {}
           if (!isDevice) {
-            const mlSize = parseInt(newSize) || 1;
+            const mlSize = parseInt(nv.size) || 1;
             finalQty = q * mlSize;
           }
         }
@@ -219,17 +225,16 @@ export default function InwardPage() {
           sub_category_id: selectedProduct.category_id || 0,
           sub_category_name: selectedProduct.category_name || '',
           product_name: selectedProduct.name || '',
-          color: newColor.trim() || '',
-          size: newSize.trim() || '',
+          color: nv.color.trim() || '',
+          size: nv.size.trim() || '',
           quantity: finalQty,
-          cost_price: parseFloat(newCost) || parseFloat(selectedProduct.cost_price) || 0,
-          sale_price: parseFloat(newSale) || parseFloat(selectedProduct.sale_price) || 0,
+          cost_price: parseFloat(nv.cost_price) || parseFloat(selectedProduct.cost_price) || 0,
+          sale_price: parseFloat(nv.sale_price) || parseFloat(selectedProduct.sale_price) || 0,
         });
         added++;
-        setNewColor(''); setNewSize(''); setNewQuantity(''); setNewCost(''); setNewSale(''); setNewMargin('');
-        setShowAddVariant(false);
       }
-    }
+    });
+    setNewVariants([]);
 
     if (added === 0) {
       toast('Please enter a valid quantity for at least one variation.', 'error');
@@ -332,7 +337,7 @@ export default function InwardPage() {
     setSelectedProduct(null);
     setProductSearch('');
     setVariantInputs({});
-    setShowAddVariant(false);
+    setNewVariants([]);
   };
 
   // ══════════════════════════════════════════════════════════
@@ -426,7 +431,7 @@ export default function InwardPage() {
                 </div>
 
                 {/* Bulk Fill Section */}
-                {productVariants.length > 1 && (
+                {(productVariants.length + newVariants.length) > 1 && (
                   <div style={{ padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#6366f1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       ⚡ Bulk Fill (Apply to all variants below)
@@ -516,35 +521,52 @@ export default function InwardPage() {
                     </div>
                   ))}
 
-                  {!showAddVariant && (
-                    <button onClick={() => setShowAddVariant(true)} style={{ marginTop: 12, padding: '8px 0', width: '100%', background: 'transparent', border: '1px dashed #cbd5e1', borderRadius: 8, color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                      + Receive a completely new {activeModule.variantLabel1 || 'Size'}/{activeModule.variantLabel2 || 'Color'} for this product
-                    </button>
-                  )}
-
-                  {showAddVariant && (
+                  {newVariants.length > 0 && (
                     <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', border: '1px dashed #fca5a5', borderRadius: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>New Variation</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 100px 80px', gap: 8, alignItems: 'center' }}>
-                        <input placeholder={`${activeModule.variantLabel1 || 'Size'} (eg ${activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? '500g' : 'XL'})`} value={newSize} onChange={e => setNewSize(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
-                        <input placeholder={`${activeModule.variantLabel2 || 'Color'} (eg ${activeModule.variantLabel2 === 'Color' || !activeModule.variantLabel2 ? 'Red' : 'Type'})`} value={newColor} onChange={e => setNewColor(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
-                        <input type="number" placeholder="Cost" value={newCost} onChange={e => {
-                          const c = e.target.value; setNewCost(c);
-                          if (newMargin) setNewSale(calcSaleFromMargin(c, newMargin));
-                          else if (newSale) setNewMargin(calcMarginFromSale(c, newSale));
-                        }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
-                        <input type="number" placeholder="Margin%" value={newMargin} onChange={e => {
-                          const m = e.target.value; setNewMargin(m);
-                          if (newCost) setNewSale(calcSaleFromMargin(newCost, m));
-                        }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
-                        <input type="number" placeholder="Sale" value={newSale} onChange={e => {
-                          const s = e.target.value; setNewSale(s);
-                          if (newCost) setNewMargin(calcMarginFromSale(newCost, s));
-                        }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
-                        <input type="number" placeholder="0" value={newQuantity} onChange={e => setNewQuantity(e.target.value)} style={{ padding: '6px', borderRadius: 6, border: '2px solid #ef4444', fontSize: 14, fontWeight: 700, textAlign: 'center', minWidth: 0, width: '100%' }} />
-                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>New Variations</div>
+                      {newVariants.map((nv, index) => (
+                        <div key={nv.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 100px 80px 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                          <input placeholder={`${activeModule.variantLabel1 || 'Size'} (eg XL)`} value={nv.size} onChange={e => {
+                            const val = e.target.value;
+                            setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, size: val } : v));
+                          }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                          <input placeholder={`${activeModule.variantLabel2 || 'Color'} (eg Red)`} value={nv.color} onChange={e => {
+                            const val = e.target.value;
+                            setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, color: val } : v));
+                          }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                          <input type="number" placeholder="Cost" value={nv.cost_price} onChange={e => {
+                            const c = e.target.value;
+                            let nextSale = nv.sale_price;
+                            let nextMargin = nv.margin;
+                            if (nv.margin) nextSale = calcSaleFromMargin(c, nv.margin);
+                            else if (nv.sale_price) nextMargin = calcMarginFromSale(c, nv.sale_price);
+                            setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, cost_price: c, margin: nextMargin, sale_price: nextSale } : v));
+                          }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                          <input type="number" placeholder="Margin%" value={nv.margin} onChange={e => {
+                            const m = e.target.value;
+                            const nextSale = calcSaleFromMargin(nv.cost_price, m);
+                            setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, margin: m, sale_price: nextSale } : v));
+                          }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                          <input type="number" placeholder="Sale" value={nv.sale_price} onChange={e => {
+                            const s = e.target.value;
+                            const nextMargin = calcMarginFromSale(nv.cost_price, s);
+                            setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, sale_price: s, margin: nextMargin } : v));
+                          }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
+                          <input type="number" placeholder="0" min="0" value={nv.quantity} onChange={e => {
+                            const val = e.target.value;
+                            setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, quantity: val } : v));
+                          }} style={{ padding: '6px', borderRadius: 6, border: '2px solid #ef4444', fontSize: 14, fontWeight: 700, textAlign: 'center', minWidth: 0, width: '100%' }} />
+                          <button onClick={() => setNewVariants(prev => prev.filter((_, i) => i !== index))} style={{ padding: '6px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Trash2 style={{ width: 16, height: 16 }} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
+
+                  <button onClick={() => setNewVariants(prev => [...prev, { id: Math.random().toString(), size: '', color: '', quantity: '', cost_price: '', sale_price: '', margin: '' }])} style={{ marginTop: 12, padding: '8px 0', width: '100%', background: 'transparent', border: '1px dashed #cbd5e1', borderRadius: 8, color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    + Receive a completely new {activeModule.variantLabel1 || 'Size'}/{activeModule.variantLabel2 || 'Color'} for this product
+                  </button>
                 </div>
 
                 {/* Add Button */}
