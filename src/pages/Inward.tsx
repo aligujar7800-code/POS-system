@@ -431,7 +431,7 @@ export default function InwardPage() {
                 </div>
 
                 {/* Bulk Fill Section */}
-                {(productVariants.length + newVariants.length) > 1 && (
+                {(productVariants.length + newVariants.length) > 0 && (
                   <div style={{ padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#6366f1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       ⚡ Bulk Fill (Apply to all variants below)
