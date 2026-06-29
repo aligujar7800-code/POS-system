@@ -1291,6 +1291,7 @@ function VariantDialog({ product, onSelect, onClose }: {
     queryFn: () => cmd('get_product_variants', { productId: product.id }),
   });
   const { currency_symbol } = useSettingsStore();
+  const isService = isProductService(product);
 
   return (
     <>
@@ -1303,12 +1304,12 @@ function VariantDialog({ product, onSelect, onClose }: {
             <button
               key={v.id}
               onClick={() => onSelect(v)}
-              disabled={v.quantity === 0}
+              disabled={!isService && v.quantity === 0}
               className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 hover:border-brand-300 hover:bg-brand-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
             >
               <div>
                 <p className="font-medium text-sm">{[v.size, v.color].filter(Boolean).join(' / ')}</p>
-                <p className="text-xs text-slate-400">{v.quantity} in stock</p>
+                <p className="text-xs text-slate-400">{isService ? 'Service' : `${v.quantity} in stock`}</p>
               </div>
               <span className="font-bold text-brand-600 text-sm">
                 {formatCurrency(v.variant_price ?? product.sale_price, currency_symbol)}
