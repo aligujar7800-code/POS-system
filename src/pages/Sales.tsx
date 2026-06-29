@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Fuse from 'fuse.js';
-import { cmd, formatCurrency } from '../lib/utils';
+import { cmd, formatCurrency, isProductService } from '../lib/utils';
 import { backgroundCreateOrder, isShopifyConfigured } from '../lib/shopify';
 import { useCartStore } from '../stores/cartStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -90,11 +90,14 @@ function ProductThumbnail({ imagePath }: { imagePath?: string }) {
 
 function ProductCard({ product, onAdd }: { product: Product; onAdd: (p: Product) => void }) {
   const { currency_symbol } = useSettingsStore();
-  const stockColor = product.total_stock === 0 ? 'text-red-500' : product.total_stock <= 5 ? 'text-amber-500' : 'text-green-600';
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
+  const isService = isProductService(product, activeModule);
+  const stockColor = isService ? 'text-purple-600' : (product.total_stock === 0 ? 'text-red-500' : product.total_stock <= 5 ? 'text-amber-500' : 'text-green-600');
+  
   return (
     <button
       onClick={() => onAdd(product)}
-      disabled={product.total_stock === 0}
+      disabled={!isService && product.total_stock === 0}
       className="card-hover p-3 text-left w-full disabled:opacity-50 disabled:cursor-not-allowed transition-transform hover:scale-[1.01] active:scale-[0.99]"
     >
       <ProductThumbnail imagePath={product.image_path} />
@@ -112,7 +115,7 @@ function ProductCard({ product, onAdd }: { product: Product; onAdd: (p: Product)
         <span className="text-sm font-bold text-brand-600">
           {formatCurrency(product.sale_price, currency_symbol)}
         </span>
-        <span className={`text-xs font-medium ${stockColor}`}>{product.total_stock}</span>
+        <span className={`text-xs font-bold ${stockColor}`}>{isService ? 'Service' : product.total_stock}</span>
       </div>
     </button>
   );

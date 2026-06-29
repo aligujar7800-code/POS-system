@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { cmd, formatCurrency } from '../lib/utils';
+import { cmd, formatCurrency, isProductService } from '../lib/utils';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../components/ui/Toaster';
 import AdminConfirmModal from '../components/ui/AdminConfirmModal';
@@ -142,6 +142,13 @@ export default function InventoryPage() {
       try { isDevice = JSON.parse(p.product_meta || '{}').vape_product_type === 'device'; } catch {}
       unit = isDevice ? 'Units' : 'ML';
     }
+    
+    // Check if it's a service
+    const isService = isProductService(p, activeModule);
+    if (isService) {
+      return <span className="badge-purple">Service</span>;
+    }
+
     if (p.total_stock === 0) return <span className="badge-red">Out of Stock</span>;
     if (p.total_stock <= p.low_stock_threshold) return <span className="badge-amber">Low Stock ({p.total_stock}{unit ? ` ${unit}` : ''})</span>;
     return <span className="badge-green">In Stock ({p.total_stock}{unit ? ` ${unit}` : ''})</span>;

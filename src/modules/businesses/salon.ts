@@ -24,6 +24,7 @@ const salonModule: BusinessModule = {
         { value: 'makeup', label: 'Makeup' },
         { value: 'massage', label: 'Massage' },
         { value: 'bridal', label: 'Bridal Package' },
+        { value: 'product', label: 'Retail Product' },
         { value: 'other', label: 'Other' },
       ],
       defaultValue: 'haircut',

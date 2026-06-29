@@ -229,3 +229,17 @@ export function formatDate(dateStr: string): string {
 export function cn(...classes: (string | undefined | null | false)[]): string {
   return classes.filter(Boolean).join(' ');
 }
+
+export function isProductService(product: any, activeModule: any): boolean {
+  if (activeModule.id === 'salon') {
+    try {
+      const meta = JSON.parse(product.product_meta || '{}');
+      if (meta.service_type === 'product') return false;
+      if (product.category_name && product.category_name.toLowerCase().includes('product')) return false;
+      return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
