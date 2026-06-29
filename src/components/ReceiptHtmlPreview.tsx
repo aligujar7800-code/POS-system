@@ -22,7 +22,7 @@ export interface ReceiptBlock {
 
 export interface ReceiptTemplate {
   version: number;
-  width: '58mm' | '80mm';
+  width: string;
   blocks: ReceiptBlock[];
 }
 
