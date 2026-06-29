@@ -414,6 +414,7 @@ export default function SalesPage() {
           unit_price: overridePrice !== null ? overridePrice : (variant?.variant_price ?? product.sale_price),
           discount: 0,
           discount_type: 'amount',
+          item_meta: isProductService(product, activeModule) ? { is_service: true } : undefined
         });
         toast(`Added: ${nameStr}`, 'success');
       } else {
@@ -480,6 +481,7 @@ export default function SalesPage() {
         unit_price: variant?.variant_price ?? product.sale_price,
         discount: 0,
         discount_type: 'amount',
+        item_meta: isProductService(product, activeModule) ? { is_service: true } : undefined
       });
     } catch {
       // Fallback: try to fetch variants if adding directly failed to include it
@@ -495,6 +497,7 @@ export default function SalesPage() {
           unit_price: variant?.variant_price ?? product.sale_price,
           discount: 0,
           discount_type: 'amount',
+          item_meta: isProductService(product, activeModule) ? { is_service: true } : undefined
         });
       } catch {
         cart.addItem({
@@ -505,6 +508,7 @@ export default function SalesPage() {
           unit_price: product.sale_price,
           discount: 0,
           discount_type: 'amount',
+          item_meta: isProductService(product, activeModule) ? { is_service: true } : undefined
         });
       }
     }
@@ -1041,6 +1045,7 @@ export default function SalesPage() {
               unit_price: v.variant_price ?? showVariants.sale_price,
               discount: 0,
               discount_type: 'amount',
+              item_meta: isProductService(showVariants, activeModule) ? { is_service: true } : undefined
             });
             setShowVariants(null);
           }}
@@ -1272,6 +1277,7 @@ export default function SalesPage() {
               unit_price: product.sale_price,
               discount: 0,
               discount_type: 'amount',
+              item_meta: isProductService(product, activeModule) ? { is_service: true } : undefined
             });
             toast(`Added: ${product.name}`, 'success');
           }}

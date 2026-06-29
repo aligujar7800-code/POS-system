@@ -136,6 +136,7 @@ pub fn create_sale(conn: &mut Connection, payload: &CreateSalePayload) -> Result
             ).unwrap_or(0);
 
             let mut stock_deduction = item.quantity;
+            let mut is_service = false;
             if let Some(ref meta_str) = item.item_meta {
                 if let Ok(meta_json) = serde_json::from_str::<serde_json::Value>(meta_str) {
                     if meta_json["sale_mode"] == "bottle" {
@@ -143,32 +144,37 @@ pub fn create_sale(conn: &mut Connection, payload: &CreateSalePayload) -> Result
                             stock_deduction = item.quantity * bottle_ml;
                         }
                     }
+                    if meta_json["is_service"].as_bool().unwrap_or(false) {
+                        is_service = true;
+                    }
                 }
             }
 
-            if current_qty < stock_deduction {
-                return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Insufficient stock for variant ID {}: Requested {}, Available {}", vid, stock_deduction, current_qty)
-                ))));
+            if !is_service {
+                if current_qty < stock_deduction {
+                    return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Insufficient stock for variant ID {}: Requested {}, Available {}", vid, stock_deduction, current_qty)
+                    ))));
+                }
+
+                cogs = crate::db::queries::products::deduct_fifo_lots(&tx, vid, stock_deduction).unwrap_or(0.0);
+                tx.execute(
+                    "UPDATE product_variants SET quantity = quantity - ?1 WHERE id = ?2",
+                    params![stock_deduction, vid],
+                )?;
+                
+                let new_qty = current_qty - stock_deduction;
+
+                tx.execute(
+                    "INSERT INTO stock_history (product_id, variant_id, prev_qty, new_qty, reason, changed_by)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        item.product_id, vid, current_qty, new_qty,
+                        format!("Sale {}", invoice), payload.created_by
+                    ],
+                )?;
             }
-
-            cogs = crate::db::queries::products::deduct_fifo_lots(&tx, vid, stock_deduction).unwrap_or(0.0);
-            tx.execute(
-                "UPDATE product_variants SET quantity = quantity - ?1 WHERE id = ?2",
-                params![stock_deduction, vid],
-            )?;
-            
-            let new_qty = current_qty - stock_deduction;
-
-            tx.execute(
-                "INSERT INTO stock_history (product_id, variant_id, prev_qty, new_qty, reason, changed_by)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    item.product_id, vid, current_qty, new_qty,
-                    format!("Sale {}", invoice), payload.created_by
-                ],
-            )?;
         }
 
         tx.execute(
