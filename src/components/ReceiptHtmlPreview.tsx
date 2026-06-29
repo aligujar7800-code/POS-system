@@ -28,7 +28,7 @@ export interface ReceiptTemplate {
 
 export const DEFAULT_TEMPLATE: ReceiptTemplate = {
   version: 1,
-  width: '80mm',
+  width: '32',
   blocks: [
     { id: 'logo-1', type: 'logo', align: 'center' },
     { id: 'txt-name', type: 'text', content: '{{shop_name}}', align: 'center', fontSize: 'double_all', bold: true },
@@ -72,8 +72,9 @@ interface Props {
 }
 
 export default function ReceiptHtmlPreview({ template, data, scale = 1 }: Props) {
-  const charsPerLine = template.width === '58mm' ? 32 : 48;
-  const widthPx = template.width === '58mm' ? '280px' : '380px';
+  const parsedWidth = parseInt(template.width) || (template.width === '80mm' ? 48 : 32);
+  const charsPerLine = parsedWidth;
+  const widthPx = charsPerLine > 40 ? '380px' : '280px';
   
   const formatCurrency = (val: number) => {
     if (data.isMock) return `[${val}]`;
@@ -168,7 +169,7 @@ export default function ReceiptHtmlPreview({ template, data, scale = 1 }: Props)
         }
         
         if (block.type === 'item_list') {
-          const isNarrow = template.width === '58mm';
+          const isNarrow = charsPerLine <= 40;
           return (
             <div key={block.id} style={{ ...style, wordBreak: 'normal' }} className="my-2 border-y border-dashed border-slate-300 py-2">
               <div className="flex font-bold mb-1">

@@ -90,7 +90,10 @@ export default function ReceiptBuilder() {
   useEffect(() => {
     try {
       if (settings.custom_receipt_template) {
-        setTemplate(JSON.parse(settings.custom_receipt_template));
+        let parsed = JSON.parse(settings.custom_receipt_template);
+        if (parsed.width === '58mm') parsed.width = '32';
+        if (parsed.width === '80mm') parsed.width = '48';
+        setTemplate(parsed);
       }
     } catch (e) {
       console.error("Failed to parse custom receipt template", e);
@@ -171,10 +174,12 @@ export default function ReceiptBuilder() {
           <select 
             value={template.width} 
             onChange={e => setTemplate({...template, width: e.target.value as any})}
-            className="input-sm w-32"
+            className="input-sm w-36"
           >
-            <option value="58mm">58mm (Narrow)</option>
-            <option value="80mm">80mm (Wide)</option>
+            <option value="30">58mm (Narrow Layout)</option>
+            <option value="32">58mm (Standard Layout)</option>
+            <option value="34">58mm (Wide Layout)</option>
+            <option value="48">80mm (Large Printer)</option>
           </select>
           <button onClick={() => {
             if(window.confirm('Reset to default template?')) {

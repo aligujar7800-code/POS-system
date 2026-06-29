@@ -211,7 +211,11 @@ pub fn build_receipt_bytes(data: &ReceiptData, template: Option<&ReceiptTemplate
         blocks: default_blocks,
     });
 
-    let w: usize = if t.width == "58mm" { 32 } else { 48 };
+    let w: usize = match t.width.as_str() {
+        "58mm" => 32,
+        "80mm" => 48,
+        other => other.parse().unwrap_or(32),
+    };
 
     buf.extend_from_slice(b"\x1b\x40"); // ESC @ – reset
 
