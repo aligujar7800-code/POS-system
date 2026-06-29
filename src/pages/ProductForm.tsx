@@ -382,12 +382,13 @@ export default function ProductForm() {
           {/* Variables for Vape logic */}
           {(() => {
             const isVapeDevice = activeModule.features.includes('vape_sale_mode') && productMeta.vape_product_type === 'device';
+            const isRetailProduct = activeModule.id === 'salon' && productMeta.service_type === 'product';
             const extraFieldsToRender = activeModule.extraFields.filter(f => {
               if (isVapeDevice && (f.key === 'per_ml_cost' || f.key === 'per_ml_sale')) return false;
               return true;
             });
-            const varLabel1 = isVapeDevice ? 'Color / Model' : (activeModule.variantLabel1 || 'Size');
-            const varLabel2 = isVapeDevice ? 'Condition' : (activeModule.variantLabel2 || 'Color');
+            const varLabel1 = isVapeDevice ? 'Color / Model' : (isRetailProduct ? 'Size / Variant' : (activeModule.variantLabel1 || 'Size'));
+            const varLabel2 = isVapeDevice ? 'Condition' : (isRetailProduct ? 'Detail' : (activeModule.variantLabel2 || 'Color'));
             const hideCostInGrid = activeModule.features.includes('vape_sale_mode') && !isVapeDevice;
             const priceHeader = activeModule.features.includes('vape_sale_mode') && !isVapeDevice ? 'Bottle Price' : 'Price';
 
@@ -437,6 +438,7 @@ export default function ProductForm() {
                               onChange={(e) => updateSizeInGroup(group.id, e.target.value)}
                               className={cn("bg-transparent border-none focus:ring-0 font-bold text-brand-700 w-32 p-0", isEdit && "cursor-not-allowed")}
                               placeholder={
+                                isRetailProduct ? 'e.g. 500ml, Small, Standard...' :
                                 activeModule.variantLabel1 === 'Duration' ? 'e.g. 30 Mins, Standard...' :
                                 activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? 'e.g. 500g' : 
                                 'e.g. M, L, XL...'

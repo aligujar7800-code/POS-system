@@ -343,6 +343,14 @@ export default function InwardPage() {
   // ══════════════════════════════════════════════════════════
   // ── RENDER ───────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════
+  // Compute labels for Retail Products in Salon Module
+  const isRetailProduct = selectedProduct && activeModule.id === 'salon' && (() => {
+    try { return JSON.parse((selectedProduct as any).product_meta || '{}').service_type === 'product'; }
+    catch { return false; }
+  })();
+  const varLabel1 = isRetailProduct ? 'Size / Variant' : (activeModule.variantLabel1 || 'Size');
+  const varLabel2 = isRetailProduct ? 'Detail' : (activeModule.variantLabel2 || 'Color');
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
       <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
@@ -458,8 +466,8 @@ export default function InwardPage() {
 
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 100px 80px', gap: 8, fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8, padding: '0 4px' }}>
-                      <div>{activeModule.variantLabel1 || 'Size'}</div>
-                      <div>{activeModule.variantLabel2 || 'Color'}</div>
+                      <div>{varLabel1}</div>
+                      <div>{varLabel2}</div>
                       <div>Cost Price</div>
                       <div>Margin%</div>
                       <div>Sale Price</div>
@@ -526,11 +534,11 @@ export default function InwardPage() {
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>New Variations</div>
                         {newVariants.map((nv, index) => (
                           <div key={nv.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 80px 100px 80px 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                            <input placeholder={`${activeModule.variantLabel1 || 'Size'} (eg XL)`} value={nv.size} onChange={e => {
+                            <input placeholder={`${varLabel1} (eg XL)`} value={nv.size} onChange={e => {
                               const val = e.target.value;
                               setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, size: val } : v));
                             }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
-                            <input placeholder={`${activeModule.variantLabel2 || 'Color'} (eg Red)`} value={nv.color} onChange={e => {
+                            <input placeholder={`${varLabel2} (eg Red)`} value={nv.color} onChange={e => {
                               const val = e.target.value;
                               setNewVariants(prev => prev.map((v, i) => i === index ? { ...v, color: val } : v));
                             }} style={{ padding: '6px', borderRadius: 6, border: '1px solid #fecaca', fontSize: 13, minWidth: 0, width: '100%' }} />
@@ -565,7 +573,7 @@ export default function InwardPage() {
                     )}
 
                     <button onClick={() => setNewVariants(prev => [...prev, { id: Math.random().toString(), size: '', color: '', quantity: '', cost_price: '', sale_price: '', margin: '' }])} style={{ marginTop: 12, padding: '8px 0', width: '100%', background: 'transparent', border: '1px dashed #cbd5e1', borderRadius: 8, color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                      + Receive a completely new {activeModule.variantLabel1 || 'Size'}/{activeModule.variantLabel2 || 'Color'} for this product
+                      + Receive a completely new {varLabel1}/{varLabel2} for this product
                     </button>
                   </div>
 
