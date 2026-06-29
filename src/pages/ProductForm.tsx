@@ -436,7 +436,11 @@ export default function ProductForm() {
                               readOnly={isEdit}
                               onChange={(e) => updateSizeInGroup(group.id, e.target.value)}
                               className={cn("bg-transparent border-none focus:ring-0 font-bold text-brand-700 w-32 p-0", isEdit && "cursor-not-allowed")}
-                              placeholder={activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? 'e.g. 500g' : 'e.g. M, L, XL...'}
+                              placeholder={
+                                activeModule.variantLabel1 === 'Duration' ? 'e.g. 30 Mins, Standard...' :
+                                activeModule.variantLabel1 === 'Pack Size' || activeModule.variantLabel1 === 'Weight' ? 'e.g. 500g' : 
+                                'e.g. M, L, XL...'
+                              }
                             />
                           </div>
                           {!isEdit && (
