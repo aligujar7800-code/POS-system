@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cmd } from '../lib/utils';
 import { useToast } from '../components/ui/Toaster';
-import { Layers, Plus, Search, Trash2, Edit2, ChevronDown, ChevronRight, Users, ShoppingBag, Baby, FolderOpen, Save, X } from 'lucide-react';
+import { Layers, Plus, Search, Trash2, Edit2, ChevronDown, ChevronRight, Users, ShoppingBag, Baby, FolderOpen, Save, X, RefreshCw } from 'lucide-react';
+import { useBusinessStore } from '../stores/businessStore';
 
 interface Category {
   id: number;
@@ -65,11 +66,14 @@ export default function CategoriesPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure? Products under this sub-category will become uncategorized.')) return;
+  const handleDelete = async (id: number, isMain: boolean = false) => {
+    const msg = isMain 
+      ? 'Are you sure? All sub-categories and products under this main category will become uncategorized.' 
+      : 'Are you sure? Products under this sub-category will become uncategorized.';
+    if (!confirm(msg)) return;
     try {
       await cmd('delete_category', { id });
-      toast('Sub-category deleted', 'success');
+      toast(isMain ? 'Main category deleted' : 'Sub-category deleted', 'success');
       qc.invalidateQueries({ queryKey: ['sub-categories'] });
       qc.invalidateQueries({ queryKey: ['main-categories'] });
       qc.invalidateQueries({ queryKey: ['categories'] });
@@ -107,6 +111,28 @@ export default function CategoriesPage() {
     }
   };
 
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
+
+  const handleLoadDefaults = async () => {
+    if (!activeModule.defaultCategories) return;
+    if (!confirm('This will load default categories for ' + activeModule.name + '. Note: existing categories will NOT be deleted automatically. Continue?')) return;
+    try {
+      for (const cat of activeModule.defaultCategories) {
+        const id = await cmd<number>('create_category', { name: cat.name, parentId: null });
+        if (cat.children && id) {
+          for (const child of cat.children) {
+            await cmd('create_category', { name: child, parentId: id });
+          }
+        }
+      }
+      toast('Default categories loaded!', 'success');
+      qc.invalidateQueries({ queryKey: ['main-categories'] });
+      qc.invalidateQueries({ queryKey: ['categories'] });
+    } catch (e: any) {
+      toast(e.toString(), 'error');
+    }
+  };
+
   return (
     <div style={{ padding: 24, height: '100%', overflow: 'auto', background: '#f8fafc' }}>
       {/* Header */}
@@ -121,29 +147,51 @@ export default function CategoriesPage() {
           </div>
         </div>
 
-        {!isAddingMain ? (
-          <button 
-            onClick={() => setIsAddingMain(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 20px',
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-              transition: 'transform 0.2s'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-          >
-            <Plus style={{ width: 18, height: 18 }} /> Add New Category
-          </button>
-        ) : (
+        <div style={{ display: 'flex', gap: 12 }}>
+          {activeModule.defaultCategories && activeModule.defaultCategories.length > 0 && (
+            <button 
+              onClick={handleLoadDefaults}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 20px',
+                background: '#fff',
+                color: '#6366f1',
+                border: '2px solid #6366f1',
+                borderRadius: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <RefreshCw style={{ width: 18, height: 18 }} /> Load Defaults
+            </button>
+          )}
+
+          {!isAddingMain ? (
+            <button 
+              onClick={() => setIsAddingMain(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 20px',
+                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                transition: 'transform 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <Plus style={{ width: 18, height: 18 }} /> Add New Category
+            </button>
+          ) : (
           <div style={{ display: 'flex', gap: 8, background: '#fff', padding: 8, borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
             <input 
               autoFocus
@@ -167,7 +215,8 @@ export default function CategoriesPage() {
               <X style={{ width: 18, height: 18 }} />
             </button>
           </div>
-        )}
+          )}
+        </div>
       </div>
 
       {mainLoading ? (
@@ -182,7 +231,7 @@ export default function CategoriesPage() {
             return (
               <div key={main.id} style={{ borderRadius: 16, border: `2px solid ${isExpanded ? colors.accent : colors.border}`, overflow: 'hidden', transition: 'all 0.25s', boxShadow: isExpanded ? `0 8px 30px ${colors.accent}22` : 'none' }}>
                 {/* Main Category Header */}
-                <button
+                <div
                   onClick={() => setExpandedId(isExpanded ? null : main.id)}
                   style={{
                     width: '100%',
@@ -191,9 +240,7 @@ export default function CategoriesPage() {
                     gap: 16,
                     padding: '20px 24px',
                     background: isExpanded ? colors.bg : '#fff',
-                    border: 'none',
                     cursor: 'pointer',
-                    textAlign: 'left',
                     transition: 'all 0.2s',
                   }}
                 >
@@ -213,10 +260,22 @@ export default function CategoriesPage() {
                       {main.product_count || 0} sub-categories
                     </div>
                   </div>
-                  <div style={{ color: colors.accent, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
-                    <ChevronDown style={{ width: 22, height: 22 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(main.id, true);
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: '#ef4444', borderRadius: 6 }}
+                      title="Delete Category"
+                    >
+                      <Trash2 style={{ width: 18, height: 18 }} />
+                    </button>
+                    <div style={{ color: colors.accent, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
+                      <ChevronDown style={{ width: 22, height: 22 }} />
+                    </div>
                   </div>
-                </button>
+                </div>
 
                 {/* Sub-Categories List */}
                 {isExpanded && (

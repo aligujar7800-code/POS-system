@@ -1082,12 +1082,19 @@ pub fn get_main_categories(conn: &Connection) -> Result<Vec<Category>> {
 }
 
 pub fn delete_category(conn: &Connection, id: i64) -> Result<()> {
-    // Prevent deleting main categories
-    if id == 100 || id == 200 || id == 300 {
-        return Err(rusqlite::Error::InvalidParameterName("Cannot delete main categories (Men, Women, Kids)".to_string()));
-    }
-    // Move products to no category
+    // Move products from sub-categories to no category
+    conn.execute(
+        "UPDATE products SET category_id = NULL WHERE category_id IN (SELECT id FROM categories WHERE parent_id = ?1)",
+        params![id]
+    )?;
+    
+    // Delete sub-categories
+    conn.execute("DELETE FROM categories WHERE parent_id = ?1", params![id])?;
+    
+    // Move products from this category to no category
     conn.execute("UPDATE products SET category_id = NULL WHERE category_id = ?1", params![id])?;
+    
+    // Delete the category itself
     conn.execute("DELETE FROM categories WHERE id = ?1", params![id])?;
     Ok(())
 }

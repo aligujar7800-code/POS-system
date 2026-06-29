@@ -7,7 +7,7 @@ import {
   Package, Check, Users, ShoppingBag, Baby, Tag, RefreshCw, Layers
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cmd, formatCurrency } from '../lib/utils';
+import { cmd, formatCurrency, isProductService } from '../lib/utils';
 import { backgroundSyncInventory, isShopifyConfigured } from '../lib/shopify';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../components/ui/Toaster';
@@ -146,7 +146,7 @@ export default function InwardPage() {
   });
 
   const fuse = new Fuse(allProducts, { keys: ['name', 'sku', 'article_number', 'barcode'], threshold: 0.3 });
-  const searchResults = productSearch ? fuse.search(productSearch).map(r => r.item) : allProducts.slice(0, 15);
+  const searchResults = productSearch ? fuse.search(productSearch).map(r => r.item).filter(p => !isProductService(p, activeModule)) : allProducts.filter(p => !isProductService(p, activeModule)).slice(0, 15);
 
   const { data: historyData = [], isLoading: isLoadingHistory } = useQuery({
     queryKey: ['inward-history'],
