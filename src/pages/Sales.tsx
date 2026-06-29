@@ -1291,7 +1291,8 @@ function VariantDialog({ product, onSelect, onClose }: {
     queryFn: () => cmd('get_product_variants', { productId: product.id }),
   });
   const { currency_symbol } = useSettingsStore();
-  const isService = isProductService(product);
+  const activeModule = useBusinessStore(s => s.getActiveModule)();
+  const isService = isProductService(product, activeModule);
 
   return (
     <>
