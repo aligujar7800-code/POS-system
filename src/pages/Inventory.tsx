@@ -9,7 +9,7 @@ import AdminConfirmModal from '../components/ui/AdminConfirmModal';
 import BarcodeModal from '../components/ui/BarcodeModal';
 import BatchBarcodeModal from '../components/ui/BatchBarcodeModal';
 import SmartProductImportModal from '../components/SmartProductImportModal';
-import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw, ShoppingBag, Scan } from 'lucide-react';
+import { Package, Plus, Search, Filter, Layers, Trash2, TrendingUp, ChevronDown, ChevronRight, Printer, RefreshCcw, ShoppingBag, Scan, Download } from 'lucide-react';
 import { syncProductToShopify, isShopifyConfigured } from '../lib/shopify';
 import { useBusinessStore } from '../stores/businessStore';
 import { ModuleInventoryValue } from '../components/modules/ModuleFields';
@@ -154,6 +154,32 @@ export default function InventoryPage() {
     return <span className="badge-green">In Stock ({p.total_stock}{unit ? ` ${unit}` : ''})</span>;
   }
 
+  const handleExportCSV = () => {
+    const headers = ['ID', 'Name', 'SKU', 'Barcode', 'Category', 'Brand', 'Cost Price', 'Sale Price', 'Total Stock', 'Variants'];
+    const rows = filtered.map(p => [
+      p.id,
+      `"${(p.name || '').replace(/"/g, '""')}"`,
+      `"${p.sku || ''}"`,
+      `"${p.barcode || ''}"`,
+      `"${p.category_name || ''}"`,
+      `"${p.brand || ''}"`,
+      p.cost_price,
+      p.sale_price,
+      p.total_stock,
+      `"${(p.variant_summary || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `inventory_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -162,6 +188,9 @@ export default function InventoryPage() {
           {t('inventory.title')}
         </h1>
         <div className="flex gap-2">
+          <button onClick={handleExportCSV} className="btn-secondary" title="Export Inventory to CSV/Excel">
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
           <button 
             onClick={async () => {
               try {
